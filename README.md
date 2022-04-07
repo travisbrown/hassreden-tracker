@@ -32,6 +32,22 @@ Most code is written in the [Rust programming language](https://www.rust-lang.or
 
 On the second point: almost all of the tools and services below can be run effectively on the smallest and cheapest Amazon Web Services EC2 instances, for example.
 
+### Terms of service compliance
+
+We aim for all of the projects above to be compliant with the terms of service of any platform that they access.
+
+In most cases data is collected from open public archives and other public resources,
+such as [Archive Today][archive-today], the [Wayback Machine][wayback-machine],
+and the [Internet Archive][internet-archive]'s [Twitter Stream Grab][twitter-stream-grab].
+
+Some of these projects do make limited use of platform APIs (e.g. the [Twitter API][twitter-api]).
+This includes collecting, archiving, and publishing public follower relationships, platform IDs,
+content status (e.g. whether a tweet is deleted or not), and screen names.
+
+Specifically, none of the tools above currently store tweets accessed through the Twitter API.
+If at some point we support archiving or publishing tweets accessed through the Twitter API,
+we will respect the deletion requirements of the Twitter API terms of service.
+
 ### Licensing and distribution
 
 All code and data is made publicly available except in cases where this would undermine the core project goals or the privacy or safety of project members.
@@ -41,4 +57,9 @@ Some projects that could be misused for commercial surveillance are published un
 
 Rust libraries are published to [crates.io](https://crates.io/), a widely-used Rust package registry.
 
+[archive-today]: https://archive.today/
 [hassreden-tracker-pf]: https://prototypefund.de/project/hassreden-tracker/
+[internet-archive]: https://archive.org/
+[twitter-api]: https://developer.twitter.com/en/docs/twitter-api
+[twitter-stream-grab]: https://archive.org/details/twitterstream
+[wayback-machine]: https://web.archive.org/
