@@ -57,10 +57,10 @@ impl ProfileDb {
         self.options.get_statistics()
     }
 
-    pub fn lookup(&self, user_id: u64) -> Result<Vec<(DateTime<Utc>, User)>, Error> {
+    pub fn lookup(&self, user_id: u64) -> Result<Vec<(DateTime<Utc>, DateTime<Utc>, User)>, Error> {
         let prefix = user_id.to_be_bytes();
         let iterator = self.db.prefix_iterator(prefix);
-        let mut users: Vec<(DateTime<Utc>, User)> = vec![];
+        let mut users: Vec<(DateTime<Utc>, DateTime<Utc>, User)> = vec![];
 
         for (key, value) in iterator {
             let next_user_id = u64::from_be_bytes(
@@ -76,7 +76,7 @@ impl ProfileDb {
             }
         }
 
-        users.sort_by_key(|(_, user)| user.snapshot);
+        users.sort_by_key(|(_, _, user)| user.snapshot);
 
         Ok(users)
     }
@@ -93,7 +93,7 @@ impl ProfileDb {
 
     pub fn raw_iter(
         &self,
-    ) -> impl Iterator<Item = Result<(u64, (DateTime<Utc>, User)), Error>> + '_ {
+    ) -> impl Iterator<Item = Result<(u64, (DateTime<Utc>, DateTime<Utc>, User)), Error>> + '_ {
         self.db
             .iterator(IteratorMode::From(&[], rocksdb::Direction::Forward))
             .map(|(key, value)| {
@@ -103,9 +103,9 @@ impl ProfileDb {
                         .map_err(|_| Error::InvalidKey(key.to_vec()))?,
                 );
 
-                let (timestamp, user) = parse_value(value)?;
+                let result = parse_value(value)?;
 
-                Ok((user_id, (timestamp, user)))
+                Ok((user_id, result))
             })
     }
 
@@ -114,6 +114,7 @@ impl ProfileDb {
         let avro_value = to_value(user)?;
         let bytes = to_avro_datum(&USER_SCHEMA, avro_value)?;
         let mut value = Vec::with_capacity(bytes.len() + 8);
+        value.extend_from_slice(&user.snapshot.to_be_bytes());
         value.extend_from_slice(&user.snapshot.to_be_bytes());
         value.extend_from_slice(&bytes);
         Ok(self.db.merge(key, value)?)
@@ -131,28 +132,29 @@ impl ProfileDb {
 
 pub struct ProfileIterator<I> {
     underlying: I,
-    current: Option<(DateTime<Utc>, User)>,
+    current: Option<(DateTime<Utc>, DateTime<Utc>, User)>,
     finished: bool,
 }
 
 impl<I: Iterator<Item = (Box<[u8]>, Box<[u8]>)>> Iterator for ProfileIterator<I> {
-    type Item = Result<Vec<(DateTime<Utc>, User)>, Error>;
+    type Item = Result<Vec<(DateTime<Utc>, DateTime<Utc>, User)>, Error>;
 
     fn next(&mut self) -> Option<Self::Item> {
         match self.current.take() {
-            Some((timestamp, user)) => {
+            Some((first_timestamp, last_timestamp, user)) => {
                 let user_id = user.id;
-                let mut batch = vec![(timestamp, user)];
+                let mut batch = vec![(first_timestamp, last_timestamp, user)];
 
                 loop {
                     match self.underlying.next() {
                         Some((_, value)) => match parse_value(value) {
-                            Ok((next_timestamp, next_user)) => {
+                            Ok((first_timestamp, last_timestamp, next_user)) => {
                                 if next_user.id == user_id {
-                                    batch.push((next_timestamp, next_user));
+                                    batch.push((first_timestamp, last_timestamp, next_user));
                                 } else {
-                                    self.current = Some((next_timestamp, next_user));
-                                    batch.sort_by_key(|(_, user)| user.snapshot);
+                                    self.current =
+                                        Some((first_timestamp, last_timestamp, next_user));
+                                    batch.sort_by_key(|(_, _, user)| user.snapshot);
                                     return Some(Ok(batch));
                                 }
                             }
@@ -174,11 +176,14 @@ impl<I: Iterator<Item = (Box<[u8]>, Box<[u8]>)>> Iterator for ProfileIterator<I>
                 } else {
                     match self.underlying.next() {
                         Some((_, value)) => match parse_value(value) {
-                            Ok((next_timestamp, next_user)) => {
-                                self.current = Some((next_timestamp, next_user));
+                            Ok((first_timestamp, last_timestamp, next_user)) => {
+                                self.current = Some((first_timestamp, last_timestamp, next_user));
                                 self.next()
                             }
-                            Err(error) => Some(Err(error)),
+                            Err(error) => {
+                                self.finished = true;
+                                Some(Err(error))
+                            }
                         },
                         None => None,
                     }
@@ -188,29 +193,47 @@ impl<I: Iterator<Item = (Box<[u8]>, Box<[u8]>)>> Iterator for ProfileIterator<I>
     }
 }
 
-fn parse_value<T: AsRef<[u8]>>(value: T) -> Result<(DateTime<Utc>, User), Error> {
+fn parse_timestamps<T: AsRef<[u8]>>(value: T) -> Result<(i64, i64), Error> {
     let value = value.as_ref();
-    let timestamp_s = i64::from_be_bytes(
+    let first_timestamp_s = i64::from_be_bytes(
         value[0..8]
             .try_into()
             .map_err(|_| Error::InvalidTimestamp(value[0..8].to_vec()))?,
     );
+    let last_timestamp_s = i64::from_be_bytes(
+        value[8..16]
+            .try_into()
+            .map_err(|_| Error::InvalidTimestamp(value[8..16].to_vec()))?,
+    );
 
-    let mut cursor = Cursor::new(&value[8..]);
+    Ok((first_timestamp_s, last_timestamp_s))
+}
+
+fn parse_value<T: AsRef<[u8]>>(value: T) -> Result<(DateTime<Utc>, DateTime<Utc>, User), Error> {
+    let (first_timestamp_s, last_timestamp_s) = parse_timestamps(&value)?;
+
+    let value = value.as_ref();
+    let mut cursor = Cursor::new(&value[16..]);
     let avro_value = from_avro_datum(&USER_SCHEMA, &mut cursor, None)?;
     let user = from_value(&avro_value)?;
-    Ok((Utc.timestamp(timestamp_s, 0), user))
+    Ok((
+        Utc.timestamp(first_timestamp_s, 0),
+        Utc.timestamp(last_timestamp_s, 0),
+        user,
+    ))
 }
 
 fn merge(_key: &[u8], existing_val: Option<&[u8]>, operands: &MergeOperands) -> Option<Vec<u8>> {
-    let mut current_timestamp = None;
-    let mut current_user = None;
+    let mut current_first_timestamp_s = None;
+    let mut current_last_timestamp_s = None;
+    let mut current_value = None;
 
     if let Some(bytes) = existing_val {
-        match parse_value(bytes) {
-            Ok((timestamp, user)) => {
-                current_timestamp = Some(timestamp);
-                current_user = Some(user);
+        match parse_timestamps(bytes) {
+            Ok((first_timestamp_s, last_timestamp_s)) => {
+                current_first_timestamp_s = Some(first_timestamp_s);
+                current_last_timestamp_s = Some(last_timestamp_s);
+                current_value = Some(bytes);
             }
             Err(error) => {
                 log::error!("Merge error: {:?}", error);
@@ -219,23 +242,29 @@ fn merge(_key: &[u8], existing_val: Option<&[u8]>, operands: &MergeOperands) -> 
     }
 
     for bytes in operands.into_iter() {
-        match parse_value(bytes) {
-            Ok((timestamp, user)) => {
-                match current_timestamp {
-                    Some(previous_timestamp) if timestamp < previous_timestamp => {
-                        current_timestamp = Some(timestamp);
+        match parse_timestamps(bytes) {
+            Ok((first_timestamp_s, last_timestamp_s)) => {
+                match current_first_timestamp_s {
+                    Some(previous_first_timestamp_s)
+                        if first_timestamp_s < previous_first_timestamp_s =>
+                    {
+                        current_first_timestamp_s = Some(first_timestamp_s);
                     }
                     None => {
-                        current_timestamp = Some(timestamp);
+                        current_first_timestamp_s = Some(first_timestamp_s);
                     }
                     _ => (),
                 }
-                match current_user {
-                    Some(previous_user) if user.snapshot > previous_user.snapshot => {
-                        current_user = Some(user);
+                match current_last_timestamp_s {
+                    Some(previous_last_timestamp_s)
+                        if last_timestamp_s > previous_last_timestamp_s =>
+                    {
+                        current_last_timestamp_s = Some(last_timestamp_s);
+                        current_value = Some(bytes);
                     }
                     None => {
-                        current_user = Some(user);
+                        current_last_timestamp_s = Some(last_timestamp_s);
+                        current_value = Some(bytes);
                     }
                     _ => (),
                 }
@@ -246,20 +275,12 @@ fn merge(_key: &[u8], existing_val: Option<&[u8]>, operands: &MergeOperands) -> 
         }
     }
 
-    match (current_timestamp, current_user) {
-        (Some(timestamp), Some(user)) => {
-            match to_value(user).and_then(|avro_value| to_avro_datum(&USER_SCHEMA, avro_value)) {
-                Ok(bytes) => {
-                    let mut value = Vec::with_capacity(bytes.len() + 8);
-                    value.extend_from_slice(&timestamp.timestamp().to_be_bytes());
-                    value.extend_from_slice(&bytes);
-                    Some(value)
-                }
-                Err(error) => {
-                    log::error!("Merge error: {:?}", error);
-                    existing_val.map(|bytes| bytes.to_vec())
-                }
-            }
+    match (current_first_timestamp_s, current_value) {
+        (Some(first_timestamp_s), Some(value)) => {
+            let mut new_value = value.to_vec();
+            new_value.splice(0..8, first_timestamp_s.to_be_bytes());
+
+            Some(new_value)
         }
         _ => {
             log::error!("Unexpected merge values");
