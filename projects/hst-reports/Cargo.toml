@@ -1,0 +1,14 @@
+[package]
+name = "hst-tw-reports"
+authors = ["Travis Brown <travisrobertbrown@gmail.com>"]
+repository = "https://github.com/travisbrown/hassreden-tracker"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+clap = { version = "3", features = ["derive"] }
+hst-cli = { path = "../hst-cli" }
+hst-deactivations = { path = "../hst-deactivations" }
+hst-tw-db = { path = "../hst-tw-db" }
+log = "0.4"
+thiserror = "1"

@@ -1,0 +1,14 @@
+[package]
+name = "hst-tw-db"
+authors = ["Travis Brown <travisrobertbrown@gmail.com>"]
+repository = "https://github.com/travisbrown/hassreden-tracker"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+apache-avro = { git = "https://github.com/apache/avro", features = ["snappy"] }
+chrono = "0.4"
+log = "0.4"
+rocksdb = "0.18"
+thiserror = "1"
+hst-tw-profiles = { path = "../hst-tw-profiles" }

@@ -1,0 +1,16 @@
+[package]
+name = "hst-tw-profiles"
+authors = ["Travis Brown <travisrobertbrown@gmail.com>"]
+repository = "https://github.com/travisbrown/hassreden-tracker"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+apache-avro = { git = "https://github.com/apache/avro", features = ["snappy"] }
+chrono = "0.4"
+hst-tw-utils = { path = "../hst-tw-utils" }
+lazy_static = "1.4"
+serde = { version = "1", features = ["derive"] }
+serde_derive = "1"
+serde_json = { version = "1", features = ["preserve_order"] }
+thiserror = "1"

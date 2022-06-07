@@ -1,0 +1,82 @@
+{
+  "name": "lol.memory.model.user",
+  "type": "record",
+  "fields": [
+    { "name": "id", "type": "long" },
+    { "name": "id_str", "type": "string" },
+    { "name": "name", "type": "string" },
+    { "name": "screen_name", "type": "string" },
+    { "name": "location", "type": ["null", "string"] },
+    { "name": "description", "type": ["null", "string"] },
+    { "name": "url", "type": ["null", "string"] },
+    {
+      "name": "entities",
+      "type": [
+        "null",
+        {
+          "name": "lol.memory.model.entities",
+          "type": "record",
+          "fields": [
+            {
+              "name": "url",
+              "type": [
+                "null",
+                {
+                  "name": "lol.memory.model.entity",
+                  "type": "record",
+                  "fields": [
+                    {
+                      "name": "urls",
+                      "type": {
+                        "type": "array",
+                        "items": {
+                          "name": "lol.memory.model.url",
+                          "type": "record",
+                          "fields": [
+                            { "name": "url", "type": "string" },
+                            { "name": "expanded_url", "type": ["null", "string"] },
+                            { "name": "display_url", "type": ["null", "string"] },
+                            { "name": "indices", "type": { "type": "array", "items": "long" } }
+                          ]
+                        }
+                      }
+                    }
+                  ]
+                }
+              ]
+            },
+            { "name": "description", "type": ["null", "lol.memory.model.entity"] }
+          ]
+        }
+      ]
+    },
+    { "name": "protected", "type": "boolean" },
+    { "name": "followers_count", "type": "long" },
+    { "name": "friends_count", "type": "long" },
+    { "name": "listed_count", "type": "long" },
+    { "name": "created_at", "type": "string" },
+    { "name": "favourites_count", "type": "long" },
+    { "name": "utc_offset", "type": ["null", "int"] },
+    { "name": "time_zone", "type": ["null", "string"] },
+    { "name": "geo_enabled", "type": ["null", "boolean"] },
+    { "name": "verified", "type": "boolean" },
+    { "name": "statuses_count", "type": "long" },
+    { "name": "lang", "type": ["null", "string"] },
+    { "name": "profile_background_color", "type": ["null", "string"] },
+    { "name": "profile_background_image_url_https", "type": ["null", "string"] },
+    { "name": "profile_background_tile", "type": ["null", "boolean"] },
+    { "name": "profile_image_url_https", "type": "string" },
+    { "name": "profile_banner_url", "type": ["null", "string"] },
+    { "name": "profile_link_color", "type": ["null", "string"] },
+    { "name": "profile_sidebar_border_color", "type": ["null", "string"] },
+    { "name": "profile_sidebar_fill_color", "type": ["null", "string"] },
+    { "name": "profile_text_color", "type": ["null", "string"] },
+    { "name": "profile_use_background_image", "type": ["null", "boolean"] },
+    { "name": "has_extended_profile", "type": ["null", "boolean"] },
+    { "name": "default_profile", "type": "boolean" },
+    { "name": "default_profile_image", "type": "boolean" },
+    { "name": "withheld_scope", "type": ["null", "string"] },
+    { "name": "withheld_in_countries", "type": { "type": "array", "items": "string" } },
+    { "name": "snapshot", "type": "long" }
+  ]
+}

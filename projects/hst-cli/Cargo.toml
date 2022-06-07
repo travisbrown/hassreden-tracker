@@ -1,0 +1,10 @@
+[package]
+name = "hst-cli"
+authors = ["Travis Brown <travisrobertbrown@gmail.com>"]
+repository = "https://github.com/travisbrown/hassreden-tracker"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+log = "0.4"
+simplelog = "0.12"
