@@ -18,6 +18,8 @@ fn main() -> Result<(), Error> {
         .collect::<Vec<_>>();
     suspended_user_ids.sort_unstable();
 
+    let db = hst_tw_db::ProfileDb::open(opts.db, true)?;
+
     match opts.command {
         Command::Run => {
             for user_id in suspended_user_ids {
@@ -28,13 +30,33 @@ fn main() -> Result<(), Error> {
                     let suspensions_observed =
                         entries.iter().filter(|entry| entry.status == 63).count();
 
+                    let profiles = db.lookup(user_id)?;
+                    let screen_names = profiles
+                        .iter()
+                        .map(|(_, profile)| profile.screen_name.clone())
+                        .collect::<Vec<_>>()
+                        .join(";");
+
+                    let last_profile = profiles.last().map(|(_, profile)| profile);
+
                     if let Some(last_entry) = entries.last() {
                         println!(
-                            "{},{},{},{}",
+                            "{},{},{},{},{},{},{},{}",
                             user_id,
+                            screen_names.len(),
+                            screen_names,
                             last_entry.observed.timestamp(),
+                            last_profile
+                                .map(
+                                    |profile| (last_entry.observed.timestamp() - profile.snapshot)
+                                        .to_string()
+                                )
+                                .unwrap_or_default(),
                             self_deactivations_observed,
-                            suspensions_observed
+                            suspensions_observed,
+                            last_profile
+                                .map(|profile| profile.followers_count.to_string())
+                                .unwrap_or_default()
                         )
                     }
                 }
