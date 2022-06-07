@@ -33,11 +33,11 @@ fn main() -> Result<(), Error> {
                     let profiles = db.lookup(user_id)?;
                     let screen_names = profiles
                         .iter()
-                        .map(|(_, profile)| profile.screen_name.clone())
+                        .map(|(_, _, profile)| profile.screen_name.clone())
                         .collect::<Vec<_>>()
                         .join(";");
 
-                    let last_profile = profiles.last().map(|(_, profile)| profile);
+                    let last_profile = profiles.last().map(|(_, _, profile)| profile);
 
                     if let Some(last_entry) = entries.last() {
                         println!(

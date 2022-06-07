@@ -4,6 +4,7 @@ members = [
     "hst-cli",
     "hst-deactivations",
     "hst-reports",
+    "hst-tools",
     "hst-tw-db",
     "hst-tw-profiles",
     "hst-tw-utils"
