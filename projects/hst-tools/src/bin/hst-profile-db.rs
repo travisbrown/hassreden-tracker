@@ -25,6 +25,61 @@ fn main() -> Result<(), Error> {
                 println!("{}", serde_json::to_value(user)?);
             }
         }
+        Command::Count => {
+            let mut user_count = 0;
+            let mut screen_name_count = 0;
+            let mut verified = 0;
+            let mut protected = 0;
+            for result in db.iter() {
+                let batch = result?;
+
+                user_count += 1;
+                screen_name_count += batch.len();
+
+                if let Some((_, _, profile)) = batch.last() {
+                    if profile.verified {
+                        verified += 1;
+                    }
+                    if profile.protected {
+                        protected += 1;
+                    }
+                }
+            }
+
+            println!("{} users, {} screen names", user_count, screen_name_count);
+            println!("{} verified, {} protected", verified, protected);
+        }
+        Command::CountRaw => {
+            let mut user_ids = std::collections::HashSet::new();
+            let mut screen_name_count = 0;
+
+            for result in db.raw_iter() {
+                let (user_id, (_, _, _user)) = result?;
+
+                user_ids.insert(user_id);
+                screen_name_count += 1;
+            }
+
+            println!(
+                "{} users, {} screen names",
+                user_ids.len(),
+                screen_name_count
+            );
+        }
+        Command::Stats => {
+            println!("Estimate the number of keys: {}", db.estimate_key_count()?);
+            println!("{:?}", db.statistics());
+        }
+        Command::ScreenNames => {
+            for result in db.iter() {
+                let batch = result?;
+                if let Some((_, _, most_recent)) = batch.last() {
+                    println!("{},{}", most_recent.id, most_recent.screen_name);
+                } else {
+                    log::error!("Empty user result when reading database");
+                }
+            }
+        }
     }
 
     Ok(())
@@ -70,4 +125,8 @@ enum Command {
         /// Twitter user ID
         id: u64,
     },
+    Count,
+    CountRaw,
+    Stats,
+    ScreenNames,
 }
