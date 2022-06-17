@@ -6,7 +6,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-apache-avro = { git = "https://github.com/apache/avro", features = ["snappy"] }
+apache-avro = { git = "https://github.com/apache/avro", features = ["snappy"], rev = "d00865af" }
 clap = { version = "3", features = ["derive"] }
 hst-cli = { path = "../hst-cli" }
 hst-deactivations = { path = "../hst-deactivations" }

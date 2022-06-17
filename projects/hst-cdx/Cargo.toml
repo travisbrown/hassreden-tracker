@@ -1,14 +1,14 @@
 [package]
-name = "hst-tw-db"
+name = "hst-cdx"
 authors = ["Travis Brown <travisrobertbrown@gmail.com>"]
 repository = "https://github.com/travisbrown/hassreden-tracker"
 version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-apache-avro = { git = "https://github.com/apache/avro", features = ["snappy"], rev = "d00865af" }
 chrono = "0.4"
-log = "0.4"
-rocksdb = "0.18"
+csv = "1"
+lazy_static = "1.4"
+parquet = "10"
 thiserror = "1"
-hst-tw-profiles = { path = "../hst-tw-profiles" }
+wayback-rs = "0.4"
