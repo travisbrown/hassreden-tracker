@@ -44,6 +44,18 @@ impl DeactivationLog {
         })
     }
 
+    pub fn status_timestamp(&self, user_id: u64) -> Option<DateTime<Utc>> {
+        self.entries.get(&user_id).and_then(|entries| {
+            entries.iter().find_map(|entry| {
+                if entry.reversal.is_none() {
+                    Some(entry.observed)
+                } else {
+                    None
+                }
+            })
+        })
+    }
+
     pub fn current_deactivated(&self, status_filter: Option<u32>) -> HashSet<u64> {
         self.entries
             .iter()
