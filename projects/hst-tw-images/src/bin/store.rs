@@ -8,7 +8,7 @@ use std::path::PathBuf;
 
 fn main() -> Result<(), Error> {
     let opts: Opts = Opts::parse();
-    let _ = hst_tw_images::log::init(opts.verbose);
+    let _ = hst_cli::init_logging(opts.verbose);
 
     match opts.command {
         Command::Merge { from, into } => {

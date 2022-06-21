@@ -4,7 +4,7 @@ use std::path::Path;
 
 fn main() -> Result<(), Error> {
     let opts: Opts = Opts::parse();
-    let _ = hst_tw_images::log::init(opts.verbose);
+    let _ = hst_cli::init_logging(opts.verbose);
     let output_base_path = Path::new(&opts.output);
 
     for entry in std::fs::read_dir(opts.input)? {

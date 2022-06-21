@@ -48,7 +48,7 @@ fn select_item(items: &[Item]) -> Option<(Image, &Item)> {
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let opts: Opts = Opts::parse();
-    let _ = hst_tw_images::log::init(opts.verbose);
+    let _ = hst_cli::init_logging(opts.verbose);
 
     let store = Store::new(&opts.output);
     let mut keys = store.keys().collect::<Result<HashSet<_>, _>>()?;

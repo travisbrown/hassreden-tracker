@@ -10,6 +10,7 @@ bincode = "2.0.0-rc.1"
 clap = { version = "3", features = ["derive"] }
 csv="1"
 flate2 = "1"
+hst-cli = { path = "../hst-cli" }
 lazy_static = "1.4"
 log = "0.4"
 regex = "1.4"
