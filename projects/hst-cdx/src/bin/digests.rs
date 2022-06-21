@@ -9,7 +9,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = std::env::args().collect::<Vec<_>>();
     let db = hst_cdx::db::DigestDb::open(&args[1], true)?;
 
-    let first = args.get(3).map(|path| Path::new(path));
+    let first = args.get(3).map(Path::new);
 
     let mut paths = std::fs::read_dir(&args[2])?
         .map(|entry| Ok(entry?.path()))

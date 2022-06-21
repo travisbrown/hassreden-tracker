@@ -1,9 +1,8 @@
-use chrono::{DateTime, NaiveDateTime, Utc};
-use csv::{ReaderBuilder, WriterBuilder};
+use chrono::{DateTime, Utc};
 use parquet::{
     basic::Compression,
     column::writer::ColumnWriter,
-    data_type::{ByteArray, ByteArrayType},
+    data_type::ByteArray,
     file::{
         properties::{WriterProperties, WriterVersion},
         writer::{FileWriter, SerializedFileWriter},
@@ -13,7 +12,7 @@ use parquet::{
 use std::fs::File;
 use std::path::Path;
 use std::sync::Arc;
-use wayback_rs::{util::parse_timestamp, Item};
+use wayback_rs::Item;
 
 pub mod db;
 

@@ -84,10 +84,10 @@ fn main() -> Result<(), Error> {
                 .lines()
                 .map(|line| {
                     let line = line?;
-                    line.split(",")
+                    line.split(',')
                         .next()
                         .and_then(|field| field.parse::<u64>().ok())
-                        .ok_or_else(|| Error::InvalidId(line))
+                        .ok_or(Error::InvalidId(line))
                 })
                 .collect::<Result<Vec<_>, _>>()?;
 
@@ -137,7 +137,7 @@ fn main() -> Result<(), Error> {
 
                         let mut status = String::new();
                         if user.protected {
-                            status.push_str("🔒");
+                            status.push('🔒');
                         }
                         if user.verified {
                             status.push_str("✔️");

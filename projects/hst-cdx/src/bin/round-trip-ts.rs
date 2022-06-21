@@ -2,8 +2,6 @@ use chrono::{DateTime, TimeZone, Utc};
 use csv::ReaderBuilder;
 use std::fs::File;
 use std::io::Read;
-use std::path::Path;
-use wayback_rs::Item;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = std::env::args().collect::<Vec<_>>();

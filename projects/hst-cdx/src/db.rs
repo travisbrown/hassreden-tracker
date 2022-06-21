@@ -1,6 +1,5 @@
 use chrono::{DateTime, TimeZone, Utc};
-use rocksdb::{DBCompressionType, DBIterator, IteratorMode, MergeOperands, Options, DB};
-use std::io::Cursor;
+use rocksdb::{DBCompressionType, Options, DB};
 use std::path::Path;
 use std::sync::Arc;
 

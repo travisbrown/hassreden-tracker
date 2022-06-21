@@ -1,11 +1,6 @@
-use chrono::{DateTime, Utc};
-use csv::ReaderBuilder;
-use itertools::Itertools;
-use std::fs::File;
-use std::io::{BufRead, Read};
-use wayback_rs::Item;
+use std::io::BufRead;
 
-///const CHUNK_SIZE: usize = 5000;
+//const CHUNK_SIZE: usize = 5000;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = std::env::args().collect::<Vec<_>>();
@@ -19,7 +14,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let parts = line.split(',').collect::<Vec<_>>();
 
         print!("{},", line);
-        if let Some((url, timestamp)) = db.lookup(&parts[0])? {
+        if let Some((url, timestamp)) = db.lookup(parts[0])? {
             println!("{},{}", url, timestamp.timestamp());
         } else {
             println!();
