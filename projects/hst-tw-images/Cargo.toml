@@ -1,0 +1,20 @@
+[package]
+name = "hst-tw-images"
+authors = ["Travis Brown <travisrobertbrown@gmail.com>"]
+repository = "https://github.com/travisbrown/hassreden-tracker"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+bincode = "2.0.0-rc.1"
+clap = { version = "3", features = ["derive"] }
+csv="1"
+flate2 = "1"
+lazy_static = "1.4"
+log = "0.4"
+regex = "1.4"
+reqwest = { version = "0.11", features = ["gzip", "json"] }
+simplelog = "0.12"
+thiserror = "1.0"
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+wayback-rs = "0.5"
