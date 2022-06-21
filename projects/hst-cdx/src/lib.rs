@@ -15,6 +15,8 @@ use std::path::Path;
 use std::sync::Arc;
 use wayback_rs::{util::parse_timestamp, Item};
 
+pub mod db;
+
 const CDX_SCHEMA_TEXT: &str = "
    message cdx {
         REQUIRED BINARY url (UTF8);
