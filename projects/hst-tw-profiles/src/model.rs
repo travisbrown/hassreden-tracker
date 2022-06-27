@@ -77,10 +77,10 @@ impl User {
         hst_tw_utils::parse_date_time(&self.created_at)
     }
 
-    pub fn expanded_url(&self) -> Option<String> {
+    pub fn expanded_url(&self) -> Option<&str> {
         let entities = self.entities.as_ref()?;
         let entity = entities.url.as_ref()?;
         let first_url = entity.urls.first()?;
-        first_url.expanded_url.clone()
+        first_url.expanded_url.as_deref()
     }
 }

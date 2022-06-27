@@ -8,10 +8,13 @@ edition = "2021"
 [dependencies]
 apache-avro = { git = "https://github.com/apache/avro", features = ["snappy"], rev = "d00865af" }
 clap = { version = "3", features = ["derive"] }
+csv = "1"
+flate2 = "1"
 hst-cli = { path = "../hst-cli" }
 hst-deactivations = { path = "../hst-deactivations" }
 hst-tw-db = { path = "../hst-tw-db" }
 hst-tw-profiles = { path = "../hst-tw-profiles" }
 log = "0.4"
+regex = "1"
 serde_json = { version = "1", features = ["preserve_order"] }
 thiserror = "1"
