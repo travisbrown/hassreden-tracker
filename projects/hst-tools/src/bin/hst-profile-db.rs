@@ -5,7 +5,7 @@ use std::fs::File;
 
 fn main() -> Result<(), Error> {
     let opts: Opts = Opts::parse();
-    let _ = hst_cli::init_logging(opts.verbose)?;
+    hst_cli::init_logging(opts.verbose)?;
     let db = ProfileDb::open(opts.db, true)?;
 
     match opts.command {

@@ -1,6 +1,5 @@
 use crate::stream::UserInfo;
 use bzip2::read::MultiBzDecoder;
-use std::collections::HashSet;
 use std::ffi::OsStr;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
@@ -66,7 +65,7 @@ pub fn extract_zip<
     let mut archive = ZipArchive::new(file)?;
 
     for i in 0..archive.len() {
-        let mut file = archive.by_index(i)?;
+        let file = archive.by_index(i)?;
         let file_name = file.name();
         if file_name.ends_with("bz2") {
             let reader = BufReader::new(MultiBzDecoder::new(file));

@@ -4,7 +4,7 @@ use std::io::BufRead;
 
 fn main() -> Result<(), Error> {
     let opts: Opts = Opts::parse();
-    let _ = hst_cli::init_logging(opts.verbose)?;
+    hst_cli::init_logging(opts.verbose)?;
     let log = hst_deactivations::DeactivationLog::read(File::open(opts.deactivations)?)?;
 
     if let Err(invalid_user_ids) = log.validate() {
@@ -114,7 +114,7 @@ fn main() -> Result<(), Error> {
 
                 if let Some(suspension_observed) = log.status_timestamp(user_id) {
                     if let Some((previous, (_, _, user))) = result {
-                        let screen_names = previous
+                        let _screen_names = previous
                             .iter()
                             .map(|(_, _, profile)| format!("{}, ", profile.screen_name))
                             .collect::<Vec<_>>();

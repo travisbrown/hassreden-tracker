@@ -7,7 +7,7 @@ use std::path::Path;
 
 fn main() -> Result<(), Error> {
     let opts: Opts = Opts::parse();
-    let _ = hst_cli::init_logging(opts.verbose)?;
+    hst_cli::init_logging(opts.verbose)?;
 
     match opts.command {
         Command::Extract => {
@@ -17,7 +17,7 @@ fn main() -> Result<(), Error> {
                 if let Some(user_info) = hst_tw_profiles::stream::extract_user_info(&value, false)?
                 {
                     for user in user_info.users {
-                        println!("{}", json!(user).to_string());
+                        println!("{}", json!(user));
                     }
 
                     for partial_user in user_info.partial_users {
@@ -64,7 +64,7 @@ fn main() -> Result<(), Error> {
                                 ) {
                                     Ok(Some(user_info)) => {
                                         for user in user_info.users {
-                                            println!("{}", json!(user).to_string());
+                                            println!("{}", json!(user));
                                         }
 
                                         for partial_user in user_info.partial_users {
@@ -108,7 +108,7 @@ fn main() -> Result<(), Error> {
                 match user_info {
                     Ok(Some(user_info)) => {
                         for user in user_info.users {
-                            writeln!(user_writer, "{}", json!(user).to_string())?;
+                            writeln!(user_writer, "{}", json!(user))?;
                         }
 
                         for partial_user in user_info.partial_users {
@@ -147,7 +147,7 @@ fn main() -> Result<(), Error> {
                 match user_info {
                     Ok(Some(user_info)) => {
                         for user in user_info.users {
-                            writeln!(user_writer, "{}", json!(user).to_string())?;
+                            writeln!(user_writer, "{}", json!(user))?;
                         }
 
                         for partial_user in user_info.partial_users {

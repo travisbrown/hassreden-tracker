@@ -1,5 +1,4 @@
 use clap::Parser;
-use hst_tw_db::ProfileDb;
 use hst_tw_profiles::model::User;
 use regex::Regex;
 use std::fs::File;
@@ -7,7 +6,7 @@ use std::io::{BufRead, BufReader};
 
 fn main() -> Result<(), Error> {
     let opts: Opts = Opts::parse();
-    let _ = hst_cli::init_logging(opts.verbose)?;
+    hst_cli::init_logging(opts.verbose)?;
 
     let link_re =
         Regex::new(r"(https?://|\b)(:?www\.)?(?:t\.me|gab\.(com|ai)|parler\.com)/[\w_/@\-]+")
@@ -27,7 +26,7 @@ fn main() -> Result<(), Error> {
 
                 let links = extract_links(&link_re, &profile);
 
-                if links.len() > 0 {
+                if !links.is_empty() {
                     let mut record = Vec::with_capacity(4);
                     let id = profile.id.to_string();
                     let snapshot = profile.snapshot.to_string();
