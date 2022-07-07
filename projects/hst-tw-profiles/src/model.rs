@@ -83,4 +83,18 @@ impl User {
         let first_url = entity.urls.first()?;
         first_url.expanded_url.as_deref()
     }
+
+    pub fn description_urls(&self) -> Vec<&str> {
+        self.entities
+            .as_ref()
+            .and_then(|entity| entity.description.as_ref())
+            .map(|description| {
+                description
+                    .urls
+                    .iter()
+                    .filter_map(|url| url.expanded_url.as_deref())
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
 }
