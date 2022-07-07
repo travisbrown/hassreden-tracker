@@ -4,6 +4,7 @@ members = [
     "hst-cdx",
     "hst-cli",
     "hst-deactivations",
+    "hst-memory-lol",
     "hst-reports",
     "hst-tools",
     "hst-tw-db",
