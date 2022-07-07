@@ -6,7 +6,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-apache-avro = { git = "https://github.com/apache/avro", features = ["snappy"], rev = "d00865af" }
+apache-avro = { git = "https://github.com/apache/avro", features = ["snappy"], rev = "bf6b86d2" }
 chrono = "0.4"
 log = "0.4"
 rocksdb = "0.18"

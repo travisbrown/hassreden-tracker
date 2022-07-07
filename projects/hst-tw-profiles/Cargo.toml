@@ -6,7 +6,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-apache-avro = { git = "https://github.com/apache/avro", features = ["snappy"], rev = "d00865af" }
+apache-avro = { git = "https://github.com/apache/avro", features = ["snappy"], rev = "bf6b86d2" }
 bzip2 = "0.4"
 chrono = "0.4"
 hst-tw-utils = { path = "../hst-tw-utils" }
