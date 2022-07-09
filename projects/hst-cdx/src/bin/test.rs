@@ -7,7 +7,7 @@ fn main() {
     let file = File::open("test.csv").unwrap();
     let input = read_csv(file).unwrap();
 
-    hst_cdx::write_file(input.into_iter(), "test.parquet", 128).unwrap();
+    //hst_cdx::write_file(input.into_iter(), "test.parquet", 128).unwrap();
 }
 
 fn read_csv<R: Read>(reader: R) -> Result<Vec<Item>, Box<dyn std::error::Error>> {

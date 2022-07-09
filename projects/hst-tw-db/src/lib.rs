@@ -32,7 +32,6 @@ impl ProfileDb {
     pub fn open<P: AsRef<Path>>(path: P, enable_statistics: bool) -> Result<Self, Error> {
         let mut options = Options::default();
         options.create_if_missing(true);
-        options.set_compression_type(DBCompressionType::Zstd);
         options.set_merge_operator_associative("merge", merge);
 
         if enable_statistics {

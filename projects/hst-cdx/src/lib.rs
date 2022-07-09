@@ -5,7 +5,7 @@ use parquet::{
     data_type::ByteArray,
     file::{
         properties::{WriterProperties, WriterVersion},
-        writer::{FileWriter, SerializedFileWriter},
+        writer::SerializedFileWriter,
     },
     schema::{parser::parse_message_type, types::Type},
 };
@@ -16,7 +16,7 @@ use wayback_rs::Item;
 
 pub mod db;
 
-const CDX_SCHEMA_TEXT: &str = "
+/*const CDX_SCHEMA_TEXT: &str = "
    message cdx {
         REQUIRED BINARY url (UTF8);
         REQUIRED INT64 archived_at;
@@ -171,3 +171,4 @@ pub enum Error {
     #[error("Parquet error")]
     Parquet(#[from] parquet::errors::ParquetError),
 }
+*/

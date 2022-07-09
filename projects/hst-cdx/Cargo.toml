@@ -6,11 +6,12 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+arrow = "17"
 chrono = "0.4"
 csv = "1"
 itertools = "0.10"
 lazy_static = "1.4"
-parquet = "10"
-rocksdb = "0.18"
+parquet = "17"
+rocksdb = { version = "0.18", default-features = false, features = ["snappy", "lz4", "zlib", "bzip2"] }
 thiserror = "1"
 wayback-rs = "0.5"
