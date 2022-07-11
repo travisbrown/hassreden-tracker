@@ -1,4 +1,63 @@
-use chrono::{DateTime, Utc};
+use arrow::csv::{Reader, ReaderBuilder};
+use arrow::datatypes::{DataType, Field, Schema, TimeUnit};
+use datafusion::prelude::*;
+use std::io::{Read, Seek};
+use std::sync::Arc;
+
+pub mod db;
+
+const TIMESTAMP_FMT: &'static str = "%Y%m%d%H%M%S";
+
+#[derive(thiserror::Error, Debug)]
+pub enum Error {
+    #[error("I/O error")]
+    Io(#[from] std::io::Error),
+    #[error("Arrow error")]
+    Arrow(#[from] arrow::error::ArrowError),
+}
+
+lazy_static::lazy_static! {
+    pub static ref CDX_CSV_SCHEMA: Arc<Schema> = Arc::new(
+        Schema::new(vec![
+            Field::new("url", DataType::Utf8, false),
+            //Field::new("archived_at", DataType::Timestamp(TimeUnit::Second, None), false),
+            Field::new("archived_at", DataType::Utf8, false),
+            Field::new("digest", DataType::Utf8, false),
+            Field::new("mime_type", DataType::Utf8, false),
+            Field::new("length", DataType::UInt32, false),
+            Field::new("status", DataType::Utf8, false),
+        ])
+    );
+
+    pub static ref CDX_CSV_SCHEMA_2: Schema =
+        Schema::new(vec![
+            Field::new("url", DataType::Utf8, false),
+            //Field::new("archived_at", DataType::Timestamp(TimeUnit::Second, None), false),
+            Field::new("archived_at", DataType::Utf8, false),
+            Field::new("digest", DataType::Utf8, false),
+            Field::new("mime_type", DataType::Utf8, false),
+            Field::new("length", DataType::UInt32, false),
+            Field::new("status", DataType::Utf8, false),
+        ])
+    ;
+}
+
+pub fn open_csv_reader<R: Read + Seek>(reader: R) -> Result<Reader<R>, Error> {
+    ReaderBuilder::new()
+        .with_schema(CDX_CSV_SCHEMA.clone())
+        .has_header(false)
+        .with_datetime_format(TIMESTAMP_FMT.to_string())
+        .build(reader)
+        .map_err(Error::from)
+}
+
+pub fn csv_options() -> CsvReadOptions<'static> {
+    CsvReadOptions::new()
+        .has_header(false)
+        .schema(&*CDX_CSV_SCHEMA_2)
+}
+
+/*use chrono::{DateTime, Utc};
 use parquet::{
     basic::Compression,
     column::writer::ColumnWriter,
@@ -14,9 +73,8 @@ use std::path::Path;
 use std::sync::Arc;
 use wayback_rs::Item;
 
-pub mod db;
 
-/*const CDX_SCHEMA_TEXT: &str = "
+const CDX_SCHEMA_TEXT: &str = "
    message cdx {
         REQUIRED BINARY url (UTF8);
         REQUIRED INT64 archived_at;
