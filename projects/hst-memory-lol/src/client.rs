@@ -31,7 +31,7 @@ struct ScreenNameResult {
 struct Account {
     id: u64,
     #[serde(rename = "screen-names")]
-    screen_names: IndexMap<String, Option<Vec<String>>>,
+    screen_names: IndexMap<String, Option<Vec<NaiveDate>>>,
 }
 
 pub struct Client {
@@ -54,38 +54,26 @@ impl Client {
             .accounts
             .into_iter()
             .map(|account| {
-                let observations = account
-                    .screen_names
-                    .into_iter()
-                    .map(|(screen_name, range_strings)| {
-                        let range = match range_strings {
-                            Some(strings) => match strings.len() {
-                                1 => {
-                                    let value = NaiveDate::parse_from_str(&strings[0], DATE_FORMAT)
-                                        .map_err(|_| Error::InvalidDateRange(strings.clone()))?;
-
-                                    Some((value, value))
+                Ok((
+                    account.id,
+                    account
+                        .screen_names
+                        .into_iter()
+                        .map(|(screen_name, dates)| {
+                            let range = if let Some(dates) = dates {
+                                if dates.is_empty() {
+                                    None
+                                } else {
+                                    Some((dates[0], dates[dates.len() - 1]))
                                 }
-                                2 => {
-                                    let first = NaiveDate::parse_from_str(&strings[0], DATE_FORMAT)
-                                        .map_err(|_| Error::InvalidDateRange(strings.clone()))?;
-                                    let last = NaiveDate::parse_from_str(&strings[1], DATE_FORMAT)
-                                        .map_err(|_| Error::InvalidDateRange(strings.clone()))?;
+                            } else {
+                                None
+                            };
 
-                                    Some((first, last))
-                                }
-                                _ => Err(Error::InvalidDateRange(strings))?,
-                            },
-                            None => None,
-                        };
-
-                        let result: Result<Observation, Error> =
-                            Ok(Observation { screen_name, range });
-                        result
-                    })
-                    .collect::<Result<Vec<_>, _>>()?;
-
-                Ok((account.id, observations))
+                            Observation { screen_name, range }
+                        })
+                        .collect(),
+                ))
             })
             .collect()
     }
@@ -94,26 +82,6 @@ impl Client {
 impl Default for Client {
     fn default() -> Self {
         Self::new(&MEMORY_LOL_BASE_URL)
-    }
-}
-
-fn parse_range_strings(value: &[String]) -> Result<(NaiveDate, NaiveDate), Error> {
-    match value.len() {
-        1 => {
-            let value = NaiveDate::parse_from_str(&value[0], DATE_FORMAT)
-                .map_err(|_| Error::InvalidDateRange(value.to_vec()))?;
-
-            Ok((value, value))
-        }
-        2 => {
-            let first = NaiveDate::parse_from_str(&value[0], DATE_FORMAT)
-                .map_err(|_| Error::InvalidDateRange(value.to_vec()))?;
-            let last = NaiveDate::parse_from_str(&value[1], DATE_FORMAT)
-                .map_err(|_| Error::InvalidDateRange(value.to_vec()))?;
-
-            Ok((first, last))
-        }
-        _ => Err(Error::InvalidDateRange(value.to_vec())),
     }
 }
 
@@ -142,7 +110,7 @@ mod tests {
                     "WLMact".to_string(),
                     Some((
                         NaiveDate::from_ymd(2022, 06, 10),
-                        NaiveDate::from_ymd(2022, 07, 05),
+                        NaiveDate::from_ymd(2022, 07, 10),
                     )),
                 ),
             ],
