@@ -1,9 +1,5 @@
 use chrono::{DateTime, NaiveDateTime, Utc};
-use csv::ReaderBuilder;
-use std::fs::File;
-use std::io::Read;
 use std::sync::Arc;
-use wayback_rs::Item;
 
 use arrow::datatypes::{DataType, Field, Schema, TimeUnit};
 use datafusion::error::DataFusionError;
@@ -12,7 +8,7 @@ use datafusion::logical_plan::{DFSchema, ExprSchemable};
 use datafusion::prelude::*;
 use datafusion::scalar::ScalarValue;
 
-const TIMESTAMP_FMT: &'static str = "%Y%m%d%H%M%S";
+const TIMESTAMP_FMT: &str = "%Y%m%d%H%M%S";
 
 #[tokio::main]
 async fn main() -> datafusion::error::Result<()> {
@@ -20,7 +16,7 @@ async fn main() -> datafusion::error::Result<()> {
     let args = std::env::args().collect::<Vec<_>>();
 
     // register the table
-    let mut ctx = SessionContext::new();
+    let ctx = SessionContext::new();
     //ctx.register_csv("example", &args[1], hst_cdx::csv_options()).await?;
     // create a plan to run a SQL query
     //let df = ctx.sql("SELECT COUNT(*) FROM example").await?;
@@ -40,7 +36,7 @@ async fn main() -> datafusion::error::Result<()> {
                         ColumnarValue::Scalar(ScalarValue::TimestampSecond(
                             Some(
                                 DateTime::<Utc>::from_utc(
-                                    NaiveDateTime::parse_from_str(&value, TIMESTAMP_FMT).map_err(
+                                    NaiveDateTime::parse_from_str(value, TIMESTAMP_FMT).map_err(
                                         |error| DataFusionError::External(Box::new(error)),
                                     )?,
                                     Utc,
@@ -50,25 +46,22 @@ async fn main() -> datafusion::error::Result<()> {
                             None,
                         ))
                     }
-                    other => panic!("unknown value"),
+                    _other => panic!("unknown value"),
                 },
                 ColumnarValue::Array(values) => {
                     let strings = arrow::array::as_string_array(values);
                     let mut builder = arrow::array::TimestampSecondBuilder::new(strings.len());
                     //let result = arrow::array::ArrayData::new_empty(DataType::Timestamp(TimeUnit::Second, None));
 
-                    for string in strings {
-                        if let Some(string) = string {
-                            builder.append_value(
-                                DateTime::<Utc>::from_utc(
-                                    NaiveDateTime::parse_from_str(&string, TIMESTAMP_FMT).map_err(
-                                        |error| DataFusionError::External(Box::new(error)),
-                                    )?,
-                                    Utc,
-                                )
-                                .timestamp(),
-                            )?;
-                        }
+                    for string in strings.into_iter().flatten() {
+                        builder.append_value(
+                            DateTime::<Utc>::from_utc(
+                                NaiveDateTime::parse_from_str(string, TIMESTAMP_FMT)
+                                    .map_err(|error| DataFusionError::External(Box::new(error)))?,
+                                Utc,
+                            )
+                            .timestamp(),
+                        )?;
                     }
 
                     ColumnarValue::Array(Arc::new(builder.finish()))

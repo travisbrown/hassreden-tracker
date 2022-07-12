@@ -1,6 +1,6 @@
 use chrono::{DateTime, Utc};
 
-#[derive(Debug, Default, PartialEq, Clone, serde::Deserialize, serde::Serialize)]
+#[derive(Debug, Default, Eq, PartialEq, Clone, serde::Deserialize, serde::Serialize)]
 #[serde(default)]
 pub struct Url {
     pub url: String,
@@ -10,13 +10,13 @@ pub struct Url {
     pub indices: Vec<i64>,
 }
 
-#[derive(Debug, Default, PartialEq, Clone, serde::Deserialize, serde::Serialize)]
+#[derive(Debug, Default, Eq, PartialEq, Clone, serde::Deserialize, serde::Serialize)]
 #[serde(default)]
 pub struct Entity {
     pub urls: Vec<Url>,
 }
 
-#[derive(Debug, Default, PartialEq, Clone, serde::Deserialize, serde::Serialize)]
+#[derive(Debug, Default, Eq, PartialEq, Clone, serde::Deserialize, serde::Serialize)]
 #[serde(default)]
 pub struct Entities {
     //#[serde(skip_serializing_if = "Option::is_none")]
@@ -24,7 +24,7 @@ pub struct Entities {
     pub description: Option<Entity>,
 }
 
-#[derive(Debug, Default, PartialEq, Clone, serde::Deserialize, serde::Serialize)]
+#[derive(Debug, Default, Eq, PartialEq, Clone, serde::Deserialize, serde::Serialize)]
 #[serde(default)]
 pub struct User {
     pub id: i64,

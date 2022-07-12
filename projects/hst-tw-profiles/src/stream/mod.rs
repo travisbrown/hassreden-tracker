@@ -17,7 +17,7 @@ pub enum Error {
     InvalidUser(serde_json::error::Error),
 }
 
-#[derive(Debug, Default, PartialEq, Clone, serde::Deserialize, serde::Serialize)]
+#[derive(Debug, Default, Eq, PartialEq, Clone, serde::Deserialize, serde::Serialize)]
 pub struct PartialUser {
     pub id: u64,
     pub screen_name: String,
@@ -34,7 +34,7 @@ impl PartialUser {
     }
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct UserInfo {
     pub snapshot: DateTime<Utc>,
     pub users: Vec<User>,

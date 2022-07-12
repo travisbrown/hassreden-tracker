@@ -158,10 +158,10 @@ impl DeactivationLog {
             let fields = line.split(',').collect::<Vec<_>>();
 
             let user_id = fields
-                .get(0)
+                .first()
                 .and_then(|value| value.parse::<u64>().ok())
                 .ok_or_else(|| {
-                    Error::InvalidUserId(fields.get(0).map(|value| value.to_string()))
+                    Error::InvalidUserId(fields.first().map(|value| value.to_string()))
                 })?;
 
             let status = fields

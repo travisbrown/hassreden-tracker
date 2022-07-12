@@ -1,12 +1,12 @@
 use arrow::csv::{Reader, ReaderBuilder};
-use arrow::datatypes::{DataType, Field, Schema, TimeUnit};
+use arrow::datatypes::{DataType, Field, Schema};
 use datafusion::prelude::*;
 use std::io::{Read, Seek};
 use std::sync::Arc;
 
 pub mod db;
 
-const TIMESTAMP_FMT: &'static str = "%Y%m%d%H%M%S";
+const TIMESTAMP_FMT: &str = "%Y%m%d%H%M%S";
 
 #[derive(thiserror::Error, Debug)]
 pub enum Error {
@@ -54,7 +54,7 @@ pub fn open_csv_reader<R: Read + Seek>(reader: R) -> Result<Reader<R>, Error> {
 pub fn csv_options() -> CsvReadOptions<'static> {
     CsvReadOptions::new()
         .has_header(false)
-        .schema(&*CDX_CSV_SCHEMA_2)
+        .schema(&CDX_CSV_SCHEMA_2)
 }
 
 /*use chrono::{DateTime, Utc};

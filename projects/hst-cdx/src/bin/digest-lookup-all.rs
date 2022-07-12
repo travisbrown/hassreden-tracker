@@ -1,5 +1,3 @@
-use std::io::BufRead;
-
 //const CHUNK_SIZE: usize = 5000;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -8,7 +6,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     //let mut lines = Vec::with_capacity(CHUNK_SIZE);
     //let mut digests = Vec::with_capacity(CHUNK_SIZE);
 
-    for line in std::io::stdin().lock().lines() {
+    for line in std::io::stdin().lines() {
         //}.chunks(CHUNK_SIZE) {
         let line = line?;
         let parts = line.split(',').collect::<Vec<_>>();

@@ -1,7 +1,7 @@
 use apache_avro::{from_avro_datum, from_value, to_avro_datum, to_value};
 use chrono::{DateTime, TimeZone, Utc};
 use hst_tw_profiles::{avro::USER_SCHEMA, model::User};
-use rocksdb::{DBCompressionType, DBIterator, IteratorMode, MergeOperands, Options, DB};
+use rocksdb::{DBIterator, IteratorMode, MergeOperands, Options, DB};
 use std::io::Cursor;
 use std::path::Path;
 use std::sync::Arc;
