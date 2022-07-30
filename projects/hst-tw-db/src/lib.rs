@@ -3,8 +3,11 @@ use chrono::{DateTime, TimeZone, Utc};
 use hst_tw_profiles::{avro::USER_SCHEMA, model::User};
 use rocksdb::{DBIterator, IteratorMode, MergeOperands, Options, DB};
 use std::io::Cursor;
+use std::marker::PhantomData;
 use std::path::Path;
 use std::sync::Arc;
+
+pub mod table;
 
 #[derive(thiserror::Error, Debug)]
 pub enum Error {
@@ -22,36 +25,52 @@ pub enum Error {
     InvalidTimestamp(Vec<u8>),
 }
 
-#[derive(Clone)]
-pub struct ProfileDb {
-    db: Arc<DB>,
-    options: Options,
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ProfileDbCounts {
+    pub id_count: u64,
+    pub pair_count: u64,
 }
 
-impl ProfileDb {
-    pub fn open<P: AsRef<Path>>(path: P, enable_statistics: bool) -> Result<Self, Error> {
-        let mut options = Options::default();
-        options.create_if_missing(true);
-        options.set_merge_operator_associative("merge", merge);
+#[derive(Clone)]
+pub struct ProfileDb<M> {
+    db: Arc<DB>,
+    options: Options,
+    mode: PhantomData<M>,
+}
 
-        if enable_statistics {
-            options.enable_statistics();
+impl<M> table::Table for ProfileDb<M> {
+    type Counts = ProfileDbCounts;
+
+    fn underlying(&self) -> &DB {
+        &self.db
+    }
+
+    fn get_counts(&self) -> Result<Self::Counts, Error> {
+        let mut pair_count = 0;
+        let mut id_count = 0;
+        let mut last_id = 0;
+
+        let mut iter = self.db.iterator(IteratorMode::Start);
+
+        for (key, _) in iter.by_ref() {
+            pair_count += 1;
+            let id = key_prefix_to_id(&key)?;
+            if id != last_id {
+                id_count += 1;
+                last_id = id;
+            }
         }
 
-        let db = DB::open(&options, path)?;
+        iter.status()?;
 
-        Ok(Self {
-            db: Arc::new(db),
-            options,
+        Ok(Self::Counts {
+            id_count,
+            pair_count,
         })
     }
+}
 
-    pub fn estimate_key_count(&self) -> Result<usize, Error> {
-        let value = self.db.property_int_value("rocksdb.estimate-num-keys")?;
-
-        Ok(value.map(|value| value as usize).unwrap_or_default())
-    }
-
+impl<M> ProfileDb<M> {
     pub fn statistics(&self) -> Option<String> {
         self.options.get_statistics()
     }
@@ -109,9 +128,31 @@ impl ProfileDb {
                 Ok((user_id, result))
             })
     }
+}
 
+impl<M: table::Mode> ProfileDb<M> {
+    pub fn open<P: AsRef<Path>>(path: P, enable_statistics: bool) -> Result<Self, Error> {
+        let mut options = Options::default();
+        options.create_if_missing(true);
+        options.set_merge_operator_associative("merge", merge);
+
+        if enable_statistics {
+            options.enable_statistics();
+        }
+
+        let db = DB::open(&options, path)?;
+
+        Ok(Self {
+            db: Arc::new(db),
+            options,
+            mode: PhantomData,
+        })
+    }
+}
+
+impl ProfileDb<table::Writeable> {
     pub fn update(&self, user: &User) -> Result<(), Error> {
-        let key = Self::make_key(user.id, &user.screen_name);
+        let key = make_key(user.id, &user.screen_name);
         let avro_value = to_value(user)?;
         let bytes = to_avro_datum(&USER_SCHEMA, avro_value)?;
         let mut value = Vec::with_capacity(bytes.len() + 8);
@@ -120,15 +161,23 @@ impl ProfileDb {
         value.extend_from_slice(&bytes);
         Ok(self.db.merge(key, value)?)
     }
+}
 
-    fn make_key(user_id: i64, screen_name: &str) -> Vec<u8> {
-        let screen_name_clean = screen_name.to_lowercase();
-        let screen_name_bytes = screen_name_clean.as_bytes();
-        let mut key = Vec::with_capacity(screen_name_bytes.len() + 8);
-        key.extend_from_slice(&user_id.to_be_bytes());
-        key.extend_from_slice(screen_name_bytes);
-        key
-    }
+fn make_key(user_id: i64, screen_name: &str) -> Vec<u8> {
+    let screen_name_clean = screen_name.to_lowercase();
+    let screen_name_bytes = screen_name_clean.as_bytes();
+    let mut key = Vec::with_capacity(screen_name_bytes.len() + 8);
+    key.extend_from_slice(&user_id.to_be_bytes());
+    key.extend_from_slice(screen_name_bytes);
+    key
+}
+
+fn key_prefix_to_id(key: &[u8]) -> Result<u64, Error> {
+    Ok(u64::from_be_bytes(
+        key[0..8]
+            .try_into()
+            .map_err(|_| Error::InvalidKey(key.to_vec()))?,
+    ))
 }
 
 pub struct ProfileIterator<'a> {

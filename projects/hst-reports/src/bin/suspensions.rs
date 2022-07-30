@@ -19,7 +19,7 @@ fn main() -> Result<(), Error> {
         .collect::<Vec<_>>();
     suspended_user_ids.sort_unstable();
 
-    let db = hst_tw_db::ProfileDb::open(opts.db, true)?;
+    let db = hst_tw_db::ProfileDb::<hst_tw_db::table::ReadOnly>::open(opts.db, true)?;
 
     match opts.command {
         Command::Run => {

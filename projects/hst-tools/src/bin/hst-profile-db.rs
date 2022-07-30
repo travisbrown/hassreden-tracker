@@ -1,15 +1,19 @@
 use clap::Parser;
-use hst_tw_db::ProfileDb;
+use hst_tw_db::{
+    table::{ReadOnly, Table, Writeable},
+    ProfileDb,
+};
 use hst_tw_profiles::model::User;
 use std::fs::File;
 
 fn main() -> Result<(), Error> {
     let opts: Opts = Opts::parse();
     hst_cli::init_logging(opts.verbose)?;
-    let db = ProfileDb::open(opts.db, true)?;
 
     match opts.command {
         Command::Import { input } => {
+            let db = ProfileDb::<Writeable>::open(opts.db, true)?;
+
             let file = File::open(input)?;
             let reader = hst_tw_profiles::avro::reader(file)?;
 
@@ -19,6 +23,7 @@ fn main() -> Result<(), Error> {
             }
         }
         Command::Lookup { id } => {
+            let db = ProfileDb::<ReadOnly>::open(opts.db, true)?;
             let users = db.lookup(id)?;
 
             for (_, _, user) in users {
@@ -26,6 +31,7 @@ fn main() -> Result<(), Error> {
             }
         }
         Command::Count => {
+            let db = ProfileDb::<ReadOnly>::open(opts.db, true)?;
             let mut user_count = 0;
             let mut screen_name_count = 0;
             let mut verified = 0;
@@ -50,6 +56,7 @@ fn main() -> Result<(), Error> {
             println!("{} verified, {} protected", verified, protected);
         }
         Command::CountRaw => {
+            let db = ProfileDb::<ReadOnly>::open(opts.db, true)?;
             let mut user_ids = std::collections::HashSet::new();
             let mut screen_name_count = 0;
 
@@ -67,10 +74,14 @@ fn main() -> Result<(), Error> {
             );
         }
         Command::Stats => {
-            println!("Estimate the number of keys: {}", db.estimate_key_count()?);
+            let db = ProfileDb::<ReadOnly>::open(opts.db, true)?;
+            if let Some(count) = db.get_estimated_key_count()? {
+                println!("Estimated number of keys: {}", count);
+            }
             println!("{:?}", db.statistics());
         }
         Command::ScreenNames => {
+            let db = ProfileDb::<ReadOnly>::open(opts.db, true)?;
             for result in db.iter() {
                 let batch = result?;
                 if let Some((_, _, most_recent)) = batch.last() {

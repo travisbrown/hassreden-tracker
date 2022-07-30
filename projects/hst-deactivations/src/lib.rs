@@ -56,6 +56,44 @@ impl DeactivationLog {
         })
     }
 
+    pub fn deactivations(&self, status_filter: Option<u32>) -> Vec<(u64, Entry)> {
+        let mut entries = self.entries.iter().collect::<Vec<_>>();
+        entries.sort_by_key(|(user_id, _)| *user_id);
+
+        entries
+            .iter()
+            .flat_map(|(user_id, entries)| {
+                entries.iter().filter_map(|entry| {
+                    if status_filter
+                        .map(|status| entry.status == status)
+                        .unwrap_or(true)
+                    {
+                        Some((**user_id, *entry))
+                    } else {
+                        None
+                    }
+                })
+            })
+            .collect()
+    }
+
+    pub fn ever_deactivated(&self, status_filter: Option<u32>) -> HashSet<u64> {
+        self.entries
+            .iter()
+            .filter_map(|(user_id, entries)| {
+                if entries.iter().any(|entry| {
+                    status_filter
+                        .map(|status| entry.status == status)
+                        .unwrap_or(true)
+                }) {
+                    Some(*user_id)
+                } else {
+                    None
+                }
+            })
+            .collect()
+    }
+
     pub fn current_deactivated(&self, status_filter: Option<u32>) -> HashSet<u64> {
         self.entries
             .iter()
@@ -204,16 +242,6 @@ impl DeactivationLog {
         }
 
         Ok(Self { entries })
-    }
-
-    pub fn deactivations(&self) -> Vec<(u64, Entry)> {
-        let mut entries = self.entries.iter().collect::<Vec<_>>();
-        entries.sort_by_key(|(user_id, _)| *user_id);
-
-        entries
-            .iter()
-            .flat_map(|(user_id, entries)| entries.iter().map(|entry| (**user_id, *entry)))
-            .collect()
     }
 
     pub fn write<W: Write>(&self, writer: W) -> Result<(), std::io::Error> {
