@@ -58,10 +58,10 @@ impl ProfileDb {
 
     pub fn lookup(&self, user_id: u64) -> Result<Vec<(DateTime<Utc>, DateTime<Utc>, User)>, Error> {
         let prefix = user_id.to_be_bytes();
-        let iterator = self.db.prefix_iterator(prefix);
+        let mut iterator = self.db.prefix_iterator(prefix);
         let mut users: Vec<(DateTime<Utc>, DateTime<Utc>, User)> = vec![];
 
-        for (key, value) in iterator {
+        for (key, value) in iterator.by_ref() {
             let next_user_id = u64::from_be_bytes(
                 key[0..8]
                     .try_into()
@@ -75,12 +75,14 @@ impl ProfileDb {
             }
         }
 
+        iterator.status()?;
+
         users.sort_by_key(|(_, _, user)| user.snapshot);
 
         Ok(users)
     }
 
-    pub fn iter(&self) -> ProfileIterator<DBIterator> {
+    pub fn iter(&self) -> ProfileIterator<'_> {
         ProfileIterator {
             underlying: self
                 .db
@@ -129,13 +131,13 @@ impl ProfileDb {
     }
 }
 
-pub struct ProfileIterator<I> {
-    underlying: I,
+pub struct ProfileIterator<'a> {
+    underlying: DBIterator<'a>,
     current: Option<(DateTime<Utc>, DateTime<Utc>, User)>,
     finished: bool,
 }
 
-impl<I: Iterator<Item = (Box<[u8]>, Box<[u8]>)>> Iterator for ProfileIterator<I> {
+impl Iterator for ProfileIterator<'_> {
     type Item = Result<Vec<(DateTime<Utc>, DateTime<Utc>, User)>, Error>;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -171,7 +173,10 @@ impl<I: Iterator<Item = (Box<[u8]>, Box<[u8]>)>> Iterator for ProfileIterator<I>
             }
             None => {
                 if self.finished {
-                    None
+                    match self.underlying.status() {
+                        Ok(()) => None,
+                        Err(error) => Some(Err(Error::from(error))),
+                    }
                 } else {
                     match self.underlying.next() {
                         Some((_, value)) => match parse_value(value) {
@@ -184,7 +189,10 @@ impl<I: Iterator<Item = (Box<[u8]>, Box<[u8]>)>> Iterator for ProfileIterator<I>
                                 Some(Err(error))
                             }
                         },
-                        None => None,
+                        None => match self.underlying.status() {
+                            Ok(()) => None,
+                            Err(error) => Some(Err(Error::from(error))),
+                        },
                     }
                 }
             }
