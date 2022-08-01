@@ -28,8 +28,6 @@ fn main() -> Result<(), Error> {
                     if suspended_user_ids.contains(&most_recent.id()) {
                         suspended_user_profiles.insert(most_recent.id(), most_recent.clone());
                     }
-                } else {
-                    log::error!("Empty user result when reading database");
                 }
             }
 
@@ -63,8 +61,6 @@ fn main() -> Result<(), Error> {
                     if batch.len() > 1 {
                         screen_name_change_user_profiles.insert(most_recent.id(), batch);
                     }
-                } else {
-                    log::error!("Empty user result when reading database");
                 }
             }
 
