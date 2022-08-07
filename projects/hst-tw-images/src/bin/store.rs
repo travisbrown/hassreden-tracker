@@ -52,6 +52,14 @@ fn main() -> Result<(), Error> {
                 println!("{}", image);
             }
         }
+        Command::Paths { base } => {
+            let store = Store::new(&base);
+
+            for entry in &store {
+                let (_, path) = entry?;
+                println!("{}", path.strip_prefix(&base).unwrap().to_string_lossy());
+            }
+        }
         Command::Keys { output, base } => {
             let mut out = GzEncoder::new(File::create(output)?, Compression::default());
             let store = Store::new(base);
@@ -117,6 +125,8 @@ enum Command {
     },
     /// Dump a list of URLs as text
     Urls { base: String },
+    /// Dump a list of paths as text
+    Paths { base: String },
     /// Export gzipped key file
     Keys {
         #[clap(short, long)]

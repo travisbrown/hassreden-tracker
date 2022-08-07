@@ -50,9 +50,10 @@ impl<M> table::Table for ProfileDb<M> {
         let mut id_count = 0;
         let mut last_id = 0;
 
-        let mut iter = self.db.iterator(IteratorMode::Start);
+        let iter = self.db.iterator(IteratorMode::Start);
 
-        for (key, _) in iter.by_ref() {
+        for result in iter {
+            let (key, _) = result?;
             pair_count += 1;
             let id = key_prefix_to_id(&key)?;
             if id != last_id {
@@ -60,8 +61,6 @@ impl<M> table::Table for ProfileDb<M> {
                 last_id = id;
             }
         }
-
-        iter.status()?;
 
         Ok(Self::Counts {
             id_count,
@@ -77,10 +76,11 @@ impl<M> ProfileDb<M> {
 
     pub fn lookup(&self, user_id: u64) -> Result<Vec<(DateTime<Utc>, DateTime<Utc>, User)>, Error> {
         let prefix = user_id.to_be_bytes();
-        let mut iterator = self.db.prefix_iterator(prefix);
+        let iter = self.db.prefix_iterator(prefix);
         let mut users: Vec<(DateTime<Utc>, DateTime<Utc>, User)> = vec![];
 
-        for (key, value) in iterator.by_ref() {
+        for result in iter {
+            let (key, value) = result?;
             let next_user_id = u64::from_be_bytes(
                 key[0..8]
                     .try_into()
@@ -93,8 +93,6 @@ impl<M> ProfileDb<M> {
                 break;
             }
         }
-
-        iterator.status()?;
 
         users.sort_by_key(|(_, _, user)| user.snapshot);
 
@@ -116,16 +114,18 @@ impl<M> ProfileDb<M> {
     ) -> impl Iterator<Item = Result<(u64, (DateTime<Utc>, DateTime<Utc>, User)), Error>> + '_ {
         self.db
             .iterator(IteratorMode::From(&[], rocksdb::Direction::Forward))
-            .map(|(key, value)| {
-                let user_id = u64::from_be_bytes(
-                    key[0..8]
-                        .try_into()
-                        .map_err(|_| Error::InvalidKey(key.to_vec()))?,
-                );
+            .map(|result| {
+                result.map_err(Error::from).and_then(|(key, value)| {
+                    let user_id = u64::from_be_bytes(
+                        key[0..8]
+                            .try_into()
+                            .map_err(|_| Error::InvalidKey(key.to_vec()))?,
+                    );
 
-                let result = parse_value(value)?;
+                    let result = parse_value(value)?;
 
-                Ok((user_id, result))
+                    Ok((user_id, result))
+                })
             })
     }
 }
@@ -197,7 +197,7 @@ impl Iterator for ProfileIterator<'_> {
 
                 loop {
                     match self.underlying.next() {
-                        Some((_, value)) => match parse_value(value) {
+                        Some(Ok((_, value))) => match parse_value(value) {
                             Ok((first_timestamp, last_timestamp, next_user)) => {
                                 if next_user.id == user_id {
                                     batch.push((first_timestamp, last_timestamp, next_user));
@@ -213,6 +213,10 @@ impl Iterator for ProfileIterator<'_> {
                                 return Some(Err(error));
                             }
                         },
+                        Some(Err(error)) => {
+                            self.finished = true;
+                            return Some(Err(Error::from(error)));
+                        }
                         None => {
                             self.finished = true;
                             return Some(Ok(batch));
@@ -222,13 +226,10 @@ impl Iterator for ProfileIterator<'_> {
             }
             None => {
                 if self.finished {
-                    match self.underlying.status() {
-                        Ok(()) => None,
-                        Err(error) => Some(Err(Error::from(error))),
-                    }
+                    None
                 } else {
                     match self.underlying.next() {
-                        Some((_, value)) => match parse_value(value) {
+                        Some(Ok((_, value))) => match parse_value(value) {
                             Ok((first_timestamp, last_timestamp, next_user)) => {
                                 self.current = Some((first_timestamp, last_timestamp, next_user));
                                 self.next()
@@ -238,10 +239,8 @@ impl Iterator for ProfileIterator<'_> {
                                 Some(Err(error))
                             }
                         },
-                        None => match self.underlying.status() {
-                            Ok(()) => None,
-                            Err(error) => Some(Err(Error::from(error))),
-                        },
+                        Some(Err(error)) => Some(Err(Error::from(error))),
+                        None => None,
                     }
                 }
             }

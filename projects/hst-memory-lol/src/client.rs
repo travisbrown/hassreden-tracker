@@ -5,7 +5,6 @@ use reqwest::Url;
 use serde::Deserialize;
 use std::collections::HashMap;
 
-const DATE_FORMAT: &str = "%Y-%m-%d";
 const MEMORY_LOL_BASE: &str = "https://memory.lol/";
 
 lazy_static::lazy_static! {
@@ -110,7 +109,7 @@ mod tests {
                     "WLMact".to_string(),
                     Some((
                         NaiveDate::from_ymd(2022, 06, 10),
-                        NaiveDate::from_ymd(2022, 07, 10),
+                        NaiveDate::from_ymd(2022, 07, 31),
                     )),
                 ),
             ],
