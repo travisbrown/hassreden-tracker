@@ -1,0 +1,7 @@
+[workspace]
+
+members = [
+    "hst-cli",
+    "hst-deactivations",
+    "hst-tw-utils"
+]
