@@ -1,7 +1,12 @@
 [package]
 name = "hst-deactivations"
 authors = ["Travis Brown <travisrobertbrown@gmail.com>"]
+homepage = "https://github.com/travisbrown/hassreden-tracker"
 repository = "https://github.com/travisbrown/hassreden-tracker"
+description = "Simple database for tracking social media deactivations"
+keywords = ["twitter"]
+license-file = "../../LICENSE"
+readme = "../../README.md"
 version = "0.1.0"
 edition = "2021"
 

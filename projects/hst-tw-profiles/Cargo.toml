@@ -1,7 +1,12 @@
 [package]
 name = "hst-tw-profiles"
 authors = ["Travis Brown <travisrobertbrown@gmail.com>"]
+homepage = "https://github.com/travisbrown/hassreden-tracker"
 repository = "https://github.com/travisbrown/hassreden-tracker"
+description = "Library for working with Twitter profiles"
+keywords = ["twitter"]
+license-file = "../../LICENSE"
+readme = "../../README.md"
 version = "0.1.0"
 edition = "2021"
 
@@ -9,7 +14,7 @@ edition = "2021"
 apache-avro = { version = "0.14", features = ["snappy"] }
 bzip2 = "0.4"
 chrono = "0.4"
-hst-tw-utils = { path = "../hst-tw-utils" }
+hst-tw-utils = { path = "../hst-tw-utils", version = "0.1.0" }
 lazy_static = "1.4"
 serde = { version = "1", features = ["derive"] }
 serde_derive = "1"

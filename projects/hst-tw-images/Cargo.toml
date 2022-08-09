@@ -1,9 +1,15 @@
 [package]
 name = "hst-tw-images"
 authors = ["Travis Brown <travisrobertbrown@gmail.com>"]
+homepage = "https://github.com/travisbrown/hassreden-tracker"
 repository = "https://github.com/travisbrown/hassreden-tracker"
+description = "Library for working with Twitter profile images"
+keywords = ["twitter"]
+license-file = "../../LICENSE"
+readme = "../../README.md"
 version = "0.1.0"
 edition = "2021"
+
 
 [dependencies]
 lazy_static = "1.4"

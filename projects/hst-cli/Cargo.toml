@@ -1,7 +1,12 @@
 [package]
 name = "hst-cli"
 authors = ["Travis Brown <travisrobertbrown@gmail.com>"]
+homepage = "https://github.com/travisbrown/hassreden-tracker"
 repository = "https://github.com/travisbrown/hassreden-tracker"
+description = "Opinionated helpers for command-line applications"
+keywords = ["cli"]
+license-file = "../../LICENSE"
+readme = "../../README.md"
 version = "0.1.0"
 edition = "2021"
 
