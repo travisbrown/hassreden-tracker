@@ -3,5 +3,6 @@
 members = [
     "hst-cli",
     "hst-deactivations",
+    "hst-tw-profiles",
     "hst-tw-utils"
 ]
