@@ -1,0 +1,17 @@
+[package]
+name = "hst-tw-tools"
+authors = ["Travis Brown <travisrobertbrown@gmail.com>"]
+repository = "https://github.com/travisbrown/hassreden-tracker"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+apache-avro = { version = "0.14", features = ["snappy"] }
+hst-cli = { path = "../hst-cli" }
+hst-tw-db = { path = "../hst-tw-db" }
+hst-tw-images = { path = "../hst-tw-images" }
+hst-tw-profiles = { path = "../hst-tw-profiles" }
+reqwest = { version = "0.11", features = ["gzip", "json"] }
+serde_json = { version = "1", features = ["preserve_order"] }
+thiserror = "1"
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
