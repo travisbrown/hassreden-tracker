@@ -23,6 +23,8 @@ pub enum Error {
     Sqlx(#[from] sqlx::Error),
     #[error("Invalid ID")]
     InvalidId(u64),
+    #[error("Invalid timestamp")]
+    InvalidTimestamp(DateTime<Utc>),
     #[error("Removing missing ID")]
     InvalidRemoval {
         source_user_id: u64,
@@ -38,15 +40,101 @@ pub enum Error {
 pub async fn update_user_relations(
     connection: &mut PgConnection,
     user_id: u64,
+    timestamp: DateTime<Utc>,
     follower_ids: HashSet<u64>,
     followed_ids: HashSet<u64>,
 ) -> Result<(), Error> {
-    if let Some(current_user_info) = get_user_relations(connection, user_id).await? {
-        let follower_update = subtract_old(current_user_info.follower_ids, follower_ids);
-        let followed_update = subtract_old(current_user_info.followed_ids, followed_ids);
+    let user_relations = get_user_relations(connection, user_id).await?;
 
-        let tx = connection.begin().await?;
+    let (follower_update, followed_update) = match user_relations {
+        Some(ref user_relations) => {
+            let follower_update = subtract_old(&user_relations.follower_ids, follower_ids);
+            let followed_update = subtract_old(&user_relations.followed_ids, followed_ids);
+
+            (follower_update, followed_update)
+        }
+        None => {
+            let mut added_follower_ids = follower_ids.into_iter().collect::<Vec<_>>();
+            let mut added_followed_ids = followed_ids.into_iter().collect::<Vec<_>>();
+
+            added_follower_ids.sort_unstable();
+            added_followed_ids.sort_unstable();
+
+            let follower_update = Update {
+                added_ids: added_follower_ids,
+                removed_ids: vec![],
+            };
+            let followed_update = Update {
+                added_ids: added_followed_ids,
+                removed_ids: vec![],
+            };
+
+            (follower_update, followed_update)
+        }
+    };
+
+    let mut tx = connection.begin().await?;
+
+    let update_id = sqlx::query_scalar!(
+        "INSERT INTO updates (user_id, timestamp) VALUES ($1, $2) RETURNING id",
+        u64_to_i64(user_id)?,
+        i32::try_from(timestamp.timestamp()).map_err(|_| Error::InvalidTimestamp(timestamp))?
+    )
+    .fetch_one(&mut tx)
+    .await?;
+
+    if let Some(last_update_id) = user_relations.map(|user_relations| user_relations.last_update_id)
+    {
+        sqlx::query!(
+            "UPDATE updates SET next_update_id = $1 WHERE id = $2",
+            update_id,
+            last_update_id,
+        )
+        .execute(&mut tx)
+        .await?;
     }
+
+    for added_follower_id in follower_update.added_ids {
+        sqlx::query!(
+                "INSERT INTO entries (update_id, user_id, follow, addition) VALUES ($1, $2, FALSE, TRUE)",
+                update_id,
+                u64_to_i64(added_follower_id)?,
+            )
+            .execute(&mut tx)
+            .await?;
+    }
+
+    for removed_follower_id in follower_update.removed_ids {
+        sqlx::query!(
+                "INSERT INTO entries (update_id, user_id, follow, addition) VALUES ($1, $2, FALSE, FALSE)",
+                update_id,
+                u64_to_i64(removed_follower_id)?,
+            )
+            .execute(&mut tx)
+            .await?;
+    }
+
+    for added_followed_id in followed_update.added_ids {
+        sqlx::query!(
+                "INSERT INTO entries (update_id, user_id, follow, addition) VALUES ($1, $2, TRUE, TRUE)",
+                update_id,
+                u64_to_i64(added_followed_id)?,
+            )
+            .execute(&mut tx)
+            .await?;
+    }
+
+    for removed_followed_id in followed_update.removed_ids {
+        sqlx::query!(
+                "INSERT INTO entries (update_id, user_id, follow, addition) VALUES ($1, $2, TRUE, FALSE)",
+                update_id,
+                u64_to_i64(removed_followed_id)?,
+            )
+            .execute(&mut tx)
+            .await?;
+    }
+
+    tx.commit().await?;
 
     Ok(())
 }
@@ -68,7 +156,7 @@ pub async fn get_user_relations(
         .map_err(Error::from)
         .try_fold(
             (HashSet::new(), HashSet::new(), None),
-            |(mut follower_ids, mut followed_ids, update_info), row| async move {
+            |(mut follower_ids, mut followed_ids, _update_info), row| async move {
                 let target_user_id = row.user_id as u64;
 
                 if !row.follow {
@@ -136,12 +224,12 @@ fn u64_to_i64(value: u64) -> Result<i64, Error> {
     i64::try_from(value).map_err(|_| Error::InvalidId(value))
 }
 
-fn subtract_old(old_ids: HashSet<u64>, mut new_ids: HashSet<u64>) -> Update {
+fn subtract_old(old_ids: &HashSet<u64>, mut new_ids: HashSet<u64>) -> Update {
     let mut removed_ids = vec![];
 
     for id in old_ids {
-        if !new_ids.remove(&id) {
-            removed_ids.push(id);
+        if !new_ids.remove(id) {
+            removed_ids.push(*id);
         }
     }
 
