@@ -144,62 +144,72 @@ pub async fn get_user_relations(
     source_user_id: u64,
 ) -> Result<Option<CurrentUserRelations>, Error> {
     let results = sqlx::query!(
-            "SELECT updates.id as update_id, updates.timestamp, entries.user_id, entries.follow, entries.addition
+        r#"SELECT
+                updates.id as update_id,
+                updates.timestamp,
+                entries.user_id AS "user_id?",
+                entries.follow AS "follow?",
+                entries.addition AS "addition?"
                 FROM updates
-                JOIN entries ON entries.update_id = updates.id
+                LEFT JOIN entries ON entries.update_id = updates.id
                 WHERE updates.user_id = $1
-                ORDER BY updates.timestamp",
-                u64_to_i64(source_user_id)?)
-            .fetch(connection);
+                ORDER BY updates.timestamp"#,
+        u64_to_i64(source_user_id)?
+    )
+    .fetch(connection);
 
     let (follower_ids, followed_ids, user_info) = results
         .map_err(Error::from)
         .try_fold(
             (HashSet::new(), HashSet::new(), None),
             |(mut follower_ids, mut followed_ids, _update_info), row| async move {
-                let target_user_id = row.user_id as u64;
+                if let Some(((user_id, follow), addition)) =
+                    row.user_id.zip(row.follow).zip(row.addition)
+                {
+                    let target_user_id = user_id as u64;
 
-                if !row.follow {
-                    if row.addition {
-                        if follower_ids.insert(target_user_id) {
-                            Ok(())
+                    if !follow {
+                        if addition {
+                            if follower_ids.insert(target_user_id) {
+                                Ok(())
+                            } else {
+                                Err(Error::InvalidAddition {
+                                    source_user_id,
+                                    target_user_id,
+                                })
+                            }
                         } else {
-                            Err(Error::InvalidAddition {
-                                source_user_id,
-                                target_user_id,
-                            })
+                            if follower_ids.remove(&target_user_id) {
+                                Ok(())
+                            } else {
+                                Err(Error::InvalidRemoval {
+                                    source_user_id,
+                                    target_user_id,
+                                })
+                            }
                         }
                     } else {
-                        if follower_ids.remove(&target_user_id) {
-                            Ok(())
+                        if addition {
+                            if followed_ids.insert(target_user_id) {
+                                Ok(())
+                            } else {
+                                Err(Error::InvalidAddition {
+                                    source_user_id,
+                                    target_user_id,
+                                })
+                            }
                         } else {
-                            Err(Error::InvalidRemoval {
-                                source_user_id,
-                                target_user_id,
-                            })
+                            if followed_ids.remove(&target_user_id) {
+                                Ok(())
+                            } else {
+                                Err(Error::InvalidRemoval {
+                                    source_user_id,
+                                    target_user_id,
+                                })
+                            }
                         }
-                    }
-                } else {
-                    if row.addition {
-                        if followed_ids.insert(target_user_id) {
-                            Ok(())
-                        } else {
-                            Err(Error::InvalidAddition {
-                                source_user_id,
-                                target_user_id,
-                            })
-                        }
-                    } else {
-                        if followed_ids.remove(&target_user_id) {
-                            Ok(())
-                        } else {
-                            Err(Error::InvalidRemoval {
-                                source_user_id,
-                                target_user_id,
-                            })
-                        }
-                    }
-                }?;
+                    }?;
+                }
 
                 Ok((
                     follower_ids,
