@@ -5,6 +5,7 @@ members = [
     "hst-deactivations",
     "hst-tools",
     "hst-tw-db",
+    "hst-tw-follow",
     "hst-tw-images",
     "hst-tw-profiles",
     "hst-tw-utils"
