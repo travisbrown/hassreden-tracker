@@ -1,5 +1,5 @@
 use chrono::Utc;
-use hst_tw_follow::update_user_relations;
+use hst_tw_follow::db::update_user_relations;
 use sqlx::postgres::PgPoolOptions;
 
 #[tokio::main]
