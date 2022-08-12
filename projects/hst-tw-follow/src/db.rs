@@ -1,6 +1,7 @@
+use super::{Batch, Change};
 use chrono::{DateTime, TimeZone, Utc};
 use futures::TryStreamExt;
-use sqlx::{Connection, PgConnection};
+use sqlx::{Connection, PgConnection, QueryBuilder};
 use std::collections::HashSet;
 use std::convert::TryFrom;
 
@@ -12,15 +13,12 @@ pub struct CurrentUserRelations {
     last_batch_timestamp: DateTime<Utc>,
 }
 
-struct Update {
-    added_ids: Vec<u64>,
-    removed_ids: Vec<u64>,
-}
-
 #[derive(thiserror::Error, Debug)]
 pub enum Error {
     #[error("SQL error")]
     Sqlx(#[from] sqlx::Error),
+    #[error("Archive error")]
+    Archive(#[from] super::archive::Error),
     #[error("Invalid ID")]
     InvalidId(u64),
     #[error("Invalid timestamp")]
@@ -37,53 +35,91 @@ pub enum Error {
     },
 }
 
-pub async fn update_user_relations(
+pub async fn update_from_batches<E, I: Iterator<Item = Result<Batch, E>>>(
     connection: &mut PgConnection,
-    user_id: u64,
+    batches: I,
+) -> Result<(), Error>
+where
+    Error: From<E>,
+{
+    for batch in batches {
+        let batch = batch?;
+        println!("batch {}", batch.user_id);
+        update_from_batch(connection, &batch, None).await?;
+    }
+
+    Ok(())
+}
+
+pub async fn update_from_full(
+    connection: &mut PgConnection,
     timestamp: DateTime<Utc>,
+    user_id: u64,
     follower_ids: HashSet<u64>,
     followed_ids: HashSet<u64>,
 ) -> Result<(), Error> {
     let user_relations = get_user_relations(connection, user_id).await?;
 
-    let (follower_update, followed_update) = match user_relations {
+    let (follower_change, followed_change) = match user_relations {
         Some(ref user_relations) => {
-            let follower_update = subtract_old(&user_relations.follower_ids, follower_ids);
-            let followed_update = subtract_old(&user_relations.followed_ids, followed_ids);
+            let follower_change = subtract_old(&user_relations.follower_ids, follower_ids);
+            let followed_change = subtract_old(&user_relations.followed_ids, followed_ids);
 
-            (follower_update, followed_update)
+            (follower_change, followed_change)
         }
         None => {
-            let mut added_follower_ids = follower_ids.into_iter().collect::<Vec<_>>();
-            let mut added_followed_ids = followed_ids.into_iter().collect::<Vec<_>>();
+            let mut follower_addition_ids = follower_ids.into_iter().collect::<Vec<_>>();
+            let mut followed_addition_ids = followed_ids.into_iter().collect::<Vec<_>>();
 
-            added_follower_ids.sort_unstable();
-            added_followed_ids.sort_unstable();
+            follower_addition_ids.sort_unstable();
+            followed_addition_ids.sort_unstable();
 
-            let follower_update = Update {
-                added_ids: added_follower_ids,
-                removed_ids: vec![],
-            };
-            let followed_update = Update {
-                added_ids: added_followed_ids,
-                removed_ids: vec![],
-            };
+            let follower_change = Change::new(follower_addition_ids, vec![]);
+            let followed_change = Change::new(followed_addition_ids, vec![]);
 
-            (follower_update, followed_update)
+            (follower_change, followed_change)
         }
     };
 
+    let batch = Batch::new(timestamp, user_id, follower_change, followed_change);
+
+    update_from_batch(
+        connection,
+        &batch,
+        Some(user_relations.map(|user_relations| user_relations.last_batch_id)),
+    )
+    .await
+}
+
+pub async fn update_from_batch(
+    connection: &mut PgConnection,
+    batch: &Batch,
+    last_batch_id: Option<Option<i32>>,
+) -> Result<(), Error> {
     let mut tx = connection.begin().await?;
+
+    let last_batch_id = match last_batch_id {
+        Some(value) => value,
+        None => {
+            sqlx::query_scalar!(
+                "SELECT id from batches WHERE user_id = $1 ORDER BY timestamp DESC LIMIT 1",
+                u64_to_i64(batch.user_id)?
+            )
+            .fetch_optional(&mut tx)
+            .await?
+        }
+    };
 
     let batch_id = sqlx::query_scalar!(
         "INSERT INTO batches (user_id, timestamp) VALUES ($1, $2) RETURNING id",
-        u64_to_i64(user_id)?,
-        i32::try_from(timestamp.timestamp()).map_err(|_| Error::InvalidTimestamp(timestamp))?
+        u64_to_i64(batch.user_id)?,
+        i32::try_from(batch.timestamp.timestamp())
+            .map_err(|_| Error::InvalidTimestamp(batch.timestamp))?
     )
     .fetch_one(&mut tx)
     .await?;
 
-    if let Some(last_batch_id) = user_relations.map(|user_relations| user_relations.last_batch_id) {
+    if let Some(last_batch_id) = last_batch_id {
         sqlx::query_scalar!(
             "UPDATE batches SET next_id = $1 WHERE id = $2 AND next_id IS NULL RETURNING id",
             batch_id,
@@ -93,41 +129,41 @@ pub async fn update_user_relations(
         .await?;
     }
 
-    for added_follower_id in follower_update.added_ids {
+    for added_follower_id in &batch.follower_change.addition_ids {
         sqlx::query!(
                 "INSERT INTO entries (batch_id, user_id, is_follower, is_addition) VALUES ($1, $2, TRUE, TRUE)",
                 batch_id,
-                u64_to_i64(added_follower_id)?,
+                u64_to_i64(*added_follower_id)?,
             )
             .execute(&mut tx)
             .await?;
     }
 
-    for removed_follower_id in follower_update.removed_ids {
+    for removed_follower_id in &batch.follower_change.removal_ids {
         sqlx::query!(
                 "INSERT INTO entries (batch_id, user_id, is_follower, is_addition) VALUES ($1, $2, TRUE, FALSE)",
                 batch_id,
-                u64_to_i64(removed_follower_id)?,
+                u64_to_i64(*removed_follower_id)?,
             )
             .execute(&mut tx)
             .await?;
     }
 
-    for added_followed_id in followed_update.added_ids {
+    for added_followed_id in &batch.followed_change.addition_ids {
         sqlx::query!(
                 "INSERT INTO entries (batch_id, user_id, is_follower, is_addition) VALUES ($1, $2, FALSE, TRUE)",
                 batch_id,
-                u64_to_i64(added_followed_id)?,
+                u64_to_i64(*added_followed_id)?,
             )
             .execute(&mut tx)
             .await?;
     }
 
-    for removed_followed_id in followed_update.removed_ids {
+    for removed_followed_id in &batch.followed_change.removal_ids {
         sqlx::query!(
                 "INSERT INTO entries (batch_id, user_id, is_follower, is_addition) VALUES ($1, $2, FALSE, FALSE)",
                 batch_id,
-                u64_to_i64(removed_followed_id)?,
+                u64_to_i64(*removed_followed_id)?,
             )
             .execute(&mut tx)
             .await?;
@@ -233,22 +269,19 @@ fn u64_to_i64(value: u64) -> Result<i64, Error> {
     i64::try_from(value).map_err(|_| Error::InvalidId(value))
 }
 
-fn subtract_old(old_ids: &HashSet<u64>, mut new_ids: HashSet<u64>) -> Update {
-    let mut removed_ids = vec![];
+fn subtract_old(old_ids: &HashSet<u64>, mut new_ids: HashSet<u64>) -> Change {
+    let mut removal_ids = vec![];
 
     for id in old_ids {
         if !new_ids.remove(id) {
-            removed_ids.push(*id);
+            removal_ids.push(*id);
         }
     }
 
-    let mut added_ids = new_ids.into_iter().collect::<Vec<_>>();
+    let mut addition_ids = new_ids.into_iter().collect::<Vec<_>>();
 
-    added_ids.sort_unstable();
-    removed_ids.sort_unstable();
+    addition_ids.sort_unstable();
+    removal_ids.sort_unstable();
 
-    Update {
-        added_ids,
-        removed_ids,
-    }
+    Change::new(addition_ids, removal_ids)
 }
