@@ -17,6 +17,10 @@ impl Change {
             removal_ids,
         }
     }
+
+    pub fn total_len(&self) -> usize {
+        self.addition_ids.len() + self.removal_ids.len()
+    }
 }
 
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -40,5 +44,9 @@ impl Batch {
             follower_change,
             followed_change,
         }
+    }
+
+    pub fn total_len(&self) -> usize {
+        self.follower_change.total_len() + self.followed_change.total_len()
     }
 }

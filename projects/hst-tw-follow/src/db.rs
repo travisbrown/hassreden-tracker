@@ -1,7 +1,7 @@
 use super::{Batch, Change};
 use chrono::{DateTime, TimeZone, Utc};
 use futures::TryStreamExt;
-use sqlx::{Connection, PgConnection, QueryBuilder};
+use sqlx::{Connection, PgConnection, Postgres, QueryBuilder};
 use std::collections::HashSet;
 use std::convert::TryFrom;
 
@@ -129,7 +129,48 @@ pub async fn update_from_batch(
         .await?;
     }
 
-    for added_follower_id in &batch.follower_change.addition_ids {
+    let insert_count = batch.total_len();
+    let batch_ids = vec![batch_id; insert_count];
+    let mut user_ids = Vec::with_capacity(insert_count);
+    let mut is_followers = Vec::with_capacity(insert_count);
+    let mut is_additions = Vec::with_capacity(insert_count);
+
+    for id in &batch.follower_change.addition_ids {
+        user_ids.push(u64_to_i64(*id)?);
+        is_followers.push(true);
+        is_additions.push(true);
+    }
+
+    for id in &batch.follower_change.removal_ids {
+        user_ids.push(u64_to_i64(*id)?);
+        is_followers.push(true);
+        is_additions.push(false);
+    }
+
+    for id in &batch.followed_change.addition_ids {
+        user_ids.push(u64_to_i64(*id)?);
+        is_followers.push(false);
+        is_additions.push(true);
+    }
+
+    for id in &batch.followed_change.removal_ids {
+        user_ids.push(u64_to_i64(*id)?);
+        is_followers.push(false);
+        is_additions.push(false);
+    }
+
+    sqlx::query!(
+        "INSERT INTO entries (batch_id, user_id, is_follower, is_addition)
+            SELECT * FROM UNNEST($1::INTEGER[], $2::BIGINT[], $3::BOOLEAN[], $4::BOOLEAN[])",
+        &batch_ids,
+        &user_ids,
+        &is_followers,
+        &is_additions
+    )
+    .execute(&mut tx)
+    .await?;
+
+    /*for added_follower_id in &batch.follower_change.addition_ids {
         sqlx::query!(
                 "INSERT INTO entries (batch_id, user_id, is_follower, is_addition) VALUES ($1, $2, TRUE, TRUE)",
                 batch_id,
@@ -167,7 +208,7 @@ pub async fn update_from_batch(
             )
             .execute(&mut tx)
             .await?;
-    }
+    }*/
 
     tx.commit().await?;
 
