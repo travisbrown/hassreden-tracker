@@ -51,7 +51,7 @@ where
     Ok(())
 }
 
-pub async fn update_from_full(
+/*pub async fn update_from_full(
     connection: &mut PgConnection,
     timestamp: DateTime<Utc>,
     user_id: u64,
@@ -89,7 +89,7 @@ pub async fn update_from_full(
         Some(user_relations.map(|user_relations| user_relations.last_batch_id)),
     )
     .await
-}
+}*/
 
 pub async fn update_from_batch(
     connection: &mut PgConnection,
@@ -102,7 +102,7 @@ pub async fn update_from_batch(
         Some(value) => value,
         None => {
             sqlx::query_scalar!(
-                "SELECT id from batches WHERE user_id = $1 ORDER BY timestamp DESC LIMIT 1",
+                "SELECT id from batches WHERE user_id = $1 AND next_id IS NULL ORDER BY timestamp DESC LIMIT 1",
                 u64_to_i64(batch.user_id)?
             )
             .fetch_optional(&mut tx)
@@ -111,10 +111,16 @@ pub async fn update_from_batch(
     };
 
     let batch_id = sqlx::query_scalar!(
-        "INSERT INTO batches (user_id, timestamp) VALUES ($1, $2) RETURNING id",
+        "INSERT INTO batches
+            (user_id, timestamp, follower_additions, follower_removals, followed_additions, followed_removals)
+        VALUES ($1, $2, $3, $4, $5, $6) RETURNING id",
         u64_to_i64(batch.user_id)?,
         i32::try_from(batch.timestamp.timestamp())
-            .map_err(|_| Error::InvalidTimestamp(batch.timestamp))?
+            .map_err(|_| Error::InvalidTimestamp(batch.timestamp))?,
+            &batch.follower_change.addition_ids.iter().map(|id| *id as i64).collect::<Vec<_>>(),
+            &batch.follower_change.removal_ids.iter().map(|id| *id as i64).collect::<Vec<_>>(),
+            &batch.followed_change.addition_ids.iter().map(|id| *id as i64).collect::<Vec<_>>(),
+            &batch.followed_change.removal_ids.iter().map(|id| *id as i64).collect::<Vec<_>>(),
     )
     .fetch_one(&mut tx)
     .await?;
@@ -129,7 +135,7 @@ pub async fn update_from_batch(
         .await?;
     }
 
-    let insert_count = batch.total_len();
+    /*let insert_count = batch.total_len();
     let batch_ids = vec![batch_id; insert_count];
     let mut user_ids = Vec::with_capacity(insert_count);
     let mut is_followers = Vec::with_capacity(insert_count);
@@ -168,54 +174,14 @@ pub async fn update_from_batch(
         &is_additions
     )
     .execute(&mut tx)
-    .await?;
-
-    /*for added_follower_id in &batch.follower_change.addition_ids {
-        sqlx::query!(
-                "INSERT INTO entries (batch_id, user_id, is_follower, is_addition) VALUES ($1, $2, TRUE, TRUE)",
-                batch_id,
-                u64_to_i64(*added_follower_id)?,
-            )
-            .execute(&mut tx)
-            .await?;
-    }
-
-    for removed_follower_id in &batch.follower_change.removal_ids {
-        sqlx::query!(
-                "INSERT INTO entries (batch_id, user_id, is_follower, is_addition) VALUES ($1, $2, TRUE, FALSE)",
-                batch_id,
-                u64_to_i64(*removed_follower_id)?,
-            )
-            .execute(&mut tx)
-            .await?;
-    }
-
-    for added_followed_id in &batch.followed_change.addition_ids {
-        sqlx::query!(
-                "INSERT INTO entries (batch_id, user_id, is_follower, is_addition) VALUES ($1, $2, FALSE, TRUE)",
-                batch_id,
-                u64_to_i64(*added_followed_id)?,
-            )
-            .execute(&mut tx)
-            .await?;
-    }
-
-    for removed_followed_id in &batch.followed_change.removal_ids {
-        sqlx::query!(
-                "INSERT INTO entries (batch_id, user_id, is_follower, is_addition) VALUES ($1, $2, FALSE, FALSE)",
-                batch_id,
-                u64_to_i64(*removed_followed_id)?,
-            )
-            .execute(&mut tx)
-            .await?;
-    }*/
+    .await?;*/
 
     tx.commit().await?;
 
     Ok(())
 }
 
-pub async fn get_user_relations(
+/*pub async fn get_user_relations(
     connection: &mut PgConnection,
     source_user_id: u64,
 ) -> Result<Option<CurrentUserRelations>, Error> {
@@ -304,7 +270,7 @@ pub async fn get_user_relations(
             last_batch_timestamp,
         },
     ))
-}
+}*/
 
 fn u64_to_i64(value: u64) -> Result<i64, Error> {
     i64::try_from(value).map_err(|_| Error::InvalidId(value))
