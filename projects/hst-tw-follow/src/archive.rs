@@ -1,6 +1,8 @@
 use super::{Batch, Change};
-use chrono::{DateTime, TimeZone, Utc};
+use chrono::{DateTime, NaiveDate, TimeZone, Utc};
+use integer_encoding::VarIntWriter;
 use std::io::{Cursor, Read};
+use std::iter::Peekable;
 
 const HEADER_LEN: usize = 28;
 const MAX_ENTRY_LEN: u32 = u32::MAX / 4;
@@ -198,7 +200,12 @@ pub fn write_batches<
         writer.write_all(&(batch.followed_change.addition_ids.len() as u32).to_be_bytes())?;
         writer.write_all(&(batch.followed_change.removal_ids.len() as u32).to_be_bytes())?;
 
-        for id in batch.follower_change.addition_ids {
+        write_all(writer, batch.follower_change.addition_ids)?;
+        write_all(writer, batch.follower_change.removal_ids)?;
+        write_all(writer, batch.followed_change.addition_ids)?;
+        write_all(writer, batch.followed_change.removal_ids)?;
+
+        /*for id in batch.follower_change.addition_ids {
             writer.write_all(&id.to_be_bytes())?;
         }
 
@@ -212,10 +219,66 @@ pub fn write_batches<
 
         for id in batch.followed_change.removal_ids {
             writer.write_all(&id.to_be_bytes())?;
-        }
+        }*/
 
         count += 1;
     }
 
     Ok(count)
+}
+
+/// Compress a set of integers.
+///
+/// The input may include duplicates and does not have to be sorted.
+fn write_all<W: std::io::Write, I: IntoIterator<Item = u64>>(
+    writer: &mut W,
+    values: I,
+) -> Result<(), std::io::Error> {
+    let mut values = values.into_iter().collect::<Vec<_>>();
+    values.push(0);
+    values.sort_unstable();
+    values.dedup();
+
+    for delta in values.windows(2).map(|pair| pair[1] - pair[0]) {
+        writer.write_varint(delta)?;
+    }
+
+    Ok(())
+}
+
+pub fn date_partition_batches<E, I: Iterator<Item = Result<Batch, E>>>(
+    batches: I,
+) -> DateBatches<I> {
+    DateBatches {
+        underlying: batches.peekable(),
+    }
+}
+
+pub struct DateBatches<I: Iterator> {
+    underlying: Peekable<I>,
+}
+
+impl<E, I: Iterator<Item = Result<Batch, E>>> Iterator for DateBatches<I> {
+    type Item = Result<(NaiveDate, Vec<Batch>), E>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.underlying.next().map(|result| {
+            let batch = result?;
+            let date = batch.timestamp.date_naive();
+            let mut batches = vec![batch];
+
+            while let Some(next) = self.underlying.next_if(|result| {
+                result
+                    .as_ref()
+                    .map_or(false, |batch| batch.timestamp.date_naive() == date)
+            }) {
+                // We've just checked for failure so this will always add an element.
+                if let Ok(batch) = next {
+                    batches.push(batch);
+                }
+            }
+
+            Ok((date, batches))
+        })
+    }
 }

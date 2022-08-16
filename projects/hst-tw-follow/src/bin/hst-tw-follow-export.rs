@@ -1,6 +1,13 @@
 //use chrono::Utc;
 //use hst_tw_follow::db::update_user_relations;
 //use sqlx::postgres::PgPoolOptions;
+use hst_tw_follow::{
+    archive::{date_partition_batches, write_batches},
+    file::read_batches,
+};
+use std::fs::File;
+use std::io::BufWriter;
+use std::path::Path;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -21,12 +28,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         );
     }*/
 
-    let mut writer = std::io::BufWriter::new(std::fs::File::create("out.dat")?);
+    let date_batches = date_partition_batches(read_batches(&args[1]));
+    let base = Path::new(&args[2]);
 
-    hst_tw_follow::archive::write_batches(
-        &mut writer,
-        hst_tw_follow::file::read_batches(&args[1]),
-    )?;
+    for result in date_batches {
+        let (date, batches) = result?;
+        let file_name = format!("{}.bin", date);
+
+        let mut writer = BufWriter::new(File::create(base.join(file_name))?);
+        write_batches(
+            &mut writer,
+            batches
+                .into_iter()
+                .map(|batch| Ok::<_, hst_tw_follow::archive::Error>(batch)),
+        )?;
+    }
 
     /*let user_id = 123;
     let timestamp = Utc::now();

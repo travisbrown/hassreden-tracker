@@ -1,4 +1,4 @@
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, TimeZone, Utc};
 
 #[derive(Debug, Default, Eq, PartialEq, Clone, serde::Deserialize, serde::Serialize)]
 #[serde(default)]
@@ -71,6 +71,10 @@ pub struct User {
 impl User {
     pub fn id(&self) -> u64 {
         self.id as u64
+    }
+
+    pub fn snapshot(&self) -> DateTime<Utc> {
+        Utc.timestamp(self.snapshot, 0)
     }
 
     pub fn created_at(&self) -> Result<DateTime<Utc>, chrono::ParseError> {
