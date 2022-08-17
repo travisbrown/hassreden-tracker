@@ -3,7 +3,7 @@
 use apache_avro::{from_avro_datum, from_value, to_avro_datum, to_value};
 use chrono::{DateTime, TimeZone, Utc};
 use hst_tw_profiles::{avro::USER_SCHEMA, model::User};
-use rocksdb::{DBCompressionType, IteratorMode, Options, DB};
+use rocksdb::{DBCompressionType, DBIterator, IteratorMode, Options, DB};
 use std::io::Cursor;
 use std::iter::Peekable;
 use std::marker::PhantomData;
@@ -116,6 +116,22 @@ impl<M> ProfileDb<M> {
             })
         })
     }
+
+    pub fn key_iter(&self) -> impl Iterator<Item = Result<(u64, DateTime<Utc>), Error>> + '_ {
+        self.db.iterator(IteratorMode::Start).map(|result| {
+            result.map_err(Error::from).and_then(|(key, _)| {
+                let (user_id, snapshot) = key_to_pair(&key)?;
+
+                Ok((user_id, snapshot))
+            })
+        })
+    }
+
+    pub fn user_id_iter(&self) -> UserIdIterator {
+        UserIdIterator {
+            underlying: self.db.iterator(IteratorMode::Start).peekable(),
+        }
+    }
 }
 
 impl<M: table::Mode> ProfileDb<M> {
@@ -159,7 +175,7 @@ fn pair_to_key(user_id: u64, snapshot: DateTime<Utc>) -> Result<[u8; 12], Error>
         .timestamp()
         .try_into()
         .map_err(|_| Error::InvalidTimestamp(snapshot))?;
-    key[8..12].copy_from_slice(&snapshot_s.to_be_bytes());
+    key[8..12].copy_from_slice(&(u32::MAX - snapshot_s).to_be_bytes());
 
     Ok(key)
 }
@@ -176,7 +192,17 @@ fn key_to_pair(key: &[u8]) -> Result<(u64, DateTime<Utc>), Error> {
             .map_err(|_| Error::InvalidKeyBytes(key.to_vec()))?,
     );
 
-    Ok((user_id, Utc.timestamp(snapshot as i64, 0)))
+    Ok((user_id, Utc.timestamp((u32::MAX - snapshot) as i64, 0)))
+}
+
+fn user_id_from_key(key: &[u8]) -> Result<u64, Error> {
+    let user_id = u64::from_be_bytes(
+        key[0..8]
+            .try_into()
+            .map_err(|_| Error::InvalidKeyBytes(key.to_vec()))?,
+    );
+
+    Ok(user_id)
 }
 
 fn parse_value<T: AsRef<[u8]>>(value: T) -> Result<User, Error> {
@@ -213,6 +239,38 @@ impl<I: Iterator<Item = Result<(u64, DateTime<Utc>, User), Error>>> Iterator
                 }
 
                 (current_user_id, users)
+            })
+        })
+    }
+}
+
+pub struct UserIdIterator<'a> {
+    underlying: Peekable<DBIterator<'a>>,
+}
+
+impl Iterator for UserIdIterator<'_> {
+    type Item = Result<(u64, usize, DateTime<Utc>), Error>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.underlying.next().map(|result| {
+            result.map_err(Error::from).and_then(|(key, _)| {
+                let (user_id, snapshot) = key_to_pair(&key)?;
+                let mut count = 1;
+
+                while let Some(result) = self.underlying.next_if(|result| {
+                    result
+                        .as_ref()
+                        .map(|(key, _)| {
+                            user_id_from_key(&key)
+                                .map(|next_user_id| next_user_id == user_id)
+                                .unwrap_or(false)
+                        })
+                        .unwrap_or(false)
+                }) {
+                    count += 1;
+                }
+
+                Ok((user_id, count, snapshot))
             })
         })
     }
