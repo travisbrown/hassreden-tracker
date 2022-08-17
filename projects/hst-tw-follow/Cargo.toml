@@ -1,0 +1,17 @@
+[package]
+name = "hst-tw-follow"
+authors = ["Travis Brown <travisrobertbrown@gmail.com>"]
+homepage = "https://github.com/travisbrown/hassreden-tracker"
+repository = "https://github.com/travisbrown/hassreden-tracker"
+description = "Database for storing Twitter follower information"
+keywords = ["twitter"]
+license-file = "../../LICENSE"
+readme = "../../README.md"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+chrono = "0.4"
+flate2 = "1"
+integer-encoding = "3"
+thiserror = "1"
