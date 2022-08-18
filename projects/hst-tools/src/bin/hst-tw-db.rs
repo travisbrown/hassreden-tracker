@@ -6,6 +6,7 @@ use hst_tw_db::{
 use hst_tw_profiles::model::User;
 use std::collections::HashSet;
 use std::fs::File;
+use std::io::{BufRead, BufReader};
 
 fn main() -> Result<(), Error> {
     let opts: Opts = Opts::parse();
@@ -15,12 +16,12 @@ fn main() -> Result<(), Error> {
         Command::Import { input } => {
             let db = ProfileDb::<Writeable>::open(opts.db, false)?;
 
-            let file = File::open(input)?;
-            let reader = hst_tw_profiles::avro::reader(file)?;
+            let reader = BufReader::new(zstd::stream::read::Decoder::new(File::open(input)?)?);
 
-            for value in reader {
-                let user = apache_avro::from_value::<User>(&value?)?;
-                db.update(&user)?;
+            for line in reader.lines() {
+                let line = line?;
+                let profile: User = serde_json::from_str(&line)?;
+                db.update(&profile)?;
             }
         }
         Command::Lookup { id } => {
@@ -34,6 +35,7 @@ fn main() -> Result<(), Error> {
         Command::Count => {
             let db = ProfileDb::<ReadOnly>::open(opts.db, true)?;
             let mut user_count = 0;
+            let mut snapshot_count = 0;
             let mut screen_name_count = 0;
             let mut verified = 0;
             let mut protected = 0;
@@ -42,6 +44,7 @@ fn main() -> Result<(), Error> {
                 let mut screen_names = HashSet::new();
 
                 user_count += 1;
+                snapshot_count += users.len();
 
                 for (_, user) in &users {
                     screen_names.insert(user.screen_name.clone());
@@ -59,7 +62,10 @@ fn main() -> Result<(), Error> {
                 screen_name_count += screen_names.len();
             }
 
-            println!("{} users, {} screen names", user_count, screen_name_count);
+            println!(
+                "{} users, {} screen names, {} snapshots",
+                user_count, screen_name_count, snapshot_count
+            );
             println!("{} verified, {} protected", verified, protected);
         }
         Command::Stats => {
@@ -68,6 +74,13 @@ fn main() -> Result<(), Error> {
                 println!("Estimated number of keys: {}", count);
             }
             println!("{:?}", db.statistics());
+        }
+        Command::Ids => {
+            let db = ProfileDb::<ReadOnly>::open(opts.db, true)?;
+            for result in db.user_id_iter() {
+                let (user_id, count, snapshot) = result?;
+                println!("{},{},{}", user_id, count, snapshot.timestamp());
+            }
         }
     }
 
@@ -115,4 +128,5 @@ enum Command {
     },
     Count,
     Stats,
+    Ids,
 }

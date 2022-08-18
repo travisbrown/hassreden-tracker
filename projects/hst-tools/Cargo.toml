@@ -12,6 +12,9 @@ edition = "2021"
 
 [dependencies]
 apache-avro = { version = "0.14", features = ["snappy"] }
+chrono = "0.4"
+flate2 = "1"
+futures = "0.3"
 hst-cli = { path = "../hst-cli" }
 hst-tw-db = { path = "../hst-tw-db" }
 hst-tw-images = { path = "../hst-tw-images" }
@@ -20,3 +23,4 @@ reqwest = { version = "0.11", features = ["gzip", "json"] }
 serde_json = { version = "1", features = ["preserve_order"] }
 thiserror = "1"
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+zstd = "0.11"
