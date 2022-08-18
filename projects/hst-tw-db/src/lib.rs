@@ -257,16 +257,20 @@ impl Iterator for UserIdIterator<'_> {
                 let (user_id, snapshot) = key_to_pair(&key)?;
                 let mut count = 1;
 
-                while let Some(result) = self.underlying.next_if(|result| {
-                    result
-                        .as_ref()
-                        .map(|(key, _)| {
-                            user_id_from_key(&key)
-                                .map(|next_user_id| next_user_id == user_id)
-                                .unwrap_or(false)
-                        })
-                        .unwrap_or(false)
-                }) {
+                while self
+                    .underlying
+                    .next_if(|result| {
+                        result
+                            .as_ref()
+                            .map(|(key, _)| {
+                                user_id_from_key(key)
+                                    .map(|next_user_id| next_user_id == user_id)
+                                    .unwrap_or(false)
+                            })
+                            .unwrap_or(false)
+                    })
+                    .is_some()
+                {
                     count += 1;
                 }
 
