@@ -14,5 +14,6 @@ edition = "2021"
 chrono = "0.4"
 flate2 = "1"
 integer-encoding = "3"
+rocksdb = { version = "0.19", default-features = false, features = ["zstd"] }
 thiserror = "1"
 zstd = "0.11"

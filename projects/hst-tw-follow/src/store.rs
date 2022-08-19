@@ -1,6 +1,6 @@
 use super::{
     formats::archive::{write_batch, FollowReader},
-    Batch,
+    Batch, Change,
 };
 use chrono::{DateTime, Duration, NaiveDate, Utc};
 use std::collections::{HashMap, HashSet};
@@ -68,6 +68,33 @@ impl State {
             users: HashMap::new(),
             writer,
         })
+    }
+
+    fn make_batch(
+        &self,
+        user_id: u64,
+        follower_ids: HashSet<u64>,
+        following_ids: HashSet<u64>,
+    ) -> Batch {
+        match self.users.get(&user_id) {
+            None => {
+                let mut follower_ids = follower_ids.into_iter().collect::<Vec<_>>();
+                follower_ids.sort_unstable();
+
+                let mut following_ids = following_ids.into_iter().collect::<Vec<_>>();
+                following_ids.sort_unstable();
+
+                Batch::new(
+                    Utc::now(),
+                    user_id,
+                    Some(Change::new(follower_ids, vec![])),
+                    Some(Change::new(following_ids, vec![])),
+                )
+            }
+            Some(user_state) => {
+                todo!()
+            }
+        }
     }
 
     fn update_and_write(&mut self, batch: &Batch, last_update: DateTime<Utc>) -> Result<(), Error> {
@@ -295,7 +322,7 @@ impl Store {
                 let mut archived_count = 0;
 
                 for (path, batches) in by_path {
-                    let file = File::create(path)?;
+                    let file = OpenOptions::new().write(true).create_new(true).open(path)?;
                     let mut writer = Encoder::new(file, ZSTD_LEVEL)?.auto_finish();
 
                     for batch in batches {
@@ -379,6 +406,8 @@ impl Store {
 
         Ok(())
     }
+
+    //·pub ages(&self) -> Vec<
 }
 
 type ZstFollowReader<'a> = FollowReader<BufReader<Decoder<'a, BufReader<File>>>>;
