@@ -31,6 +31,10 @@ pub enum Error {
     StaleBatch(Batch),
     #[error("Past file exists")]
     PastFileCollision(Box<Path>),
+    #[error("Invalid past file path")]
+    InvalidPastFile(Box<Path>),
+    #[error("Invalid batch")]
+    InvalidBatch(Batch),
 }
 
 struct UserState {
@@ -152,8 +156,9 @@ impl Store {
 
         let mut state = store.state.write().unwrap();
 
-        for batch in store.past_batches() {
-            state.update(&batch?, None)?;
+        for result in store.past_batches() {
+            let (_, batch) = result?;
+            state.update(&batch, None)?;
         }
 
         for batch in current_batches {
@@ -209,9 +214,15 @@ impl Store {
 
     fn past_batches(&self) -> PastBatchIterator<ZstFollowReader<'_>> {
         std::fs::read_dir(self.past_dir_path())
+            .map_err(Error::from)
             .and_then(|entries| {
                 let mut paths = entries
-                    .map(|result| result.map(|entry| entry.path().into_boxed_path()))
+                    .map(|result| {
+                        result.map_err(Error::from).and_then(|entry| {
+                            extract_path_date(entry.path())
+                                .map(|date| (date, entry.path().into_boxed_path()))
+                        })
+                    })
                     .collect::<Result<Vec<_>, _>>()?;
                 paths.sort();
                 paths.reverse();
@@ -336,6 +347,38 @@ impl Store {
             Ok(None)
         }
     }
+
+    pub fn validate(&self) -> Result<(), Error> {
+        let mut last_timestamp = DateTime::<Utc>::MIN_UTC;
+        let mut last_user_id = 0;
+
+        self.state.write().unwrap().writer.flush()?;
+
+        for result in self.past_batches() {
+            let (date, batch) = result?;
+
+            if date != batch.timestamp.date_naive() || last_timestamp > batch.timestamp {
+                return Err(Error::InvalidBatch(batch.clone()));
+            }
+
+            if last_timestamp == batch.timestamp && last_user_id >= batch.user_id {
+                return Err(Error::InvalidBatch(batch.clone()));
+            }
+
+            last_timestamp = batch.timestamp;
+            last_user_id = batch.user_id;
+        }
+
+        let now_date = Utc::now().date_naive();
+
+        for batch in self.current_batches()? {
+            if batch.timestamp.date_naive() != now_date {
+                return Err(Error::InvalidBatch(batch.clone()));
+            }
+        }
+
+        Ok(())
+    }
 }
 
 type ZstFollowReader<'a> = FollowReader<BufReader<Decoder<'a, BufReader<File>>>>;
@@ -343,13 +386,13 @@ type ZstFollowReader<'a> = FollowReader<BufReader<Decoder<'a, BufReader<File>>>>
 pub enum PastBatchIterator<R> {
     Failed(Option<Error>),
     Remaining {
-        paths: Vec<Box<Path>>,
-        current: Option<R>,
+        paths: Vec<(NaiveDate, Box<Path>)>,
+        current: Option<(NaiveDate, R)>,
     },
 }
 
 impl Iterator for PastBatchIterator<ZstFollowReader<'_>> {
-    type Item = Result<Batch, Error>;
+    type Item = Result<(NaiveDate, Batch), Error>;
 
     fn next(&mut self) -> Option<Self::Item> {
         match self {
@@ -358,8 +401,8 @@ impl Iterator for PastBatchIterator<ZstFollowReader<'_>> {
                 ref mut paths,
                 ref mut current,
             } => match current {
-                Some(reader) => match reader.next() {
-                    Some(result) => Some(result.map_err(Error::from)),
+                Some((date, reader)) => match reader.next() {
+                    Some(result) => Some(result.map_err(Error::from).map(|batch| (*date, batch))),
                     None => {
                         *current = None;
                         self.next()
@@ -367,10 +410,10 @@ impl Iterator for PastBatchIterator<ZstFollowReader<'_>> {
                 },
                 None => match paths.pop() {
                     None => None,
-                    Some(path) => match File::open(path).and_then(Decoder::new) {
+                    Some((date, path)) => match File::open(path).and_then(Decoder::new) {
                         Err(error) => Some(Err(Error::from(error))),
                         Ok(decoder) => {
-                            *current = Some(FollowReader::new(BufReader::new(decoder)));
+                            *current = Some((date, FollowReader::new(BufReader::new(decoder))));
                             self.next()
                         }
                     },
@@ -378,6 +421,18 @@ impl Iterator for PastBatchIterator<ZstFollowReader<'_>> {
             },
         }
     }
+}
+
+fn extract_path_date<P: AsRef<Path>>(path: P) -> Result<NaiveDate, Error> {
+    let date_str = path
+        .as_ref()
+        .file_name()
+        .and_then(|ostr| ostr.to_str())
+        .and_then(|str| str.split('.').next())
+        .ok_or_else(|| Error::InvalidPastFile(path.as_ref().to_path_buf().into_boxed_path()))?;
+
+    NaiveDate::parse_from_str(date_str, "%Y-%m-%d")
+        .map_err(|_| Error::InvalidPastFile(path.as_ref().to_path_buf().into_boxed_path()))
 }
 
 fn estimate_run_duration(count: usize) -> Duration {
