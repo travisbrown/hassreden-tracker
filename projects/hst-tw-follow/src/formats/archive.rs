@@ -1,13 +1,26 @@
-use super::{Batch, Change};
-use chrono::{DateTime, NaiveDate, TimeZone, Utc};
+use super::super::{Batch, Change};
+use chrono::{DateTime, TimeZone, Utc};
 use integer_encoding::{VarIntReader, VarIntWriter};
 use std::fs::File;
 use std::io::{BufReader, Read};
-use std::iter::Peekable;
 use std::path::Path;
 
 const HEADER_LEN: usize = 28;
 const MAX_ENTRY_LEN: u32 = u32::MAX / 4;
+
+#[derive(thiserror::Error, Debug)]
+pub enum Error {
+    #[error("I/O error")]
+    Io(#[from] std::io::Error),
+    #[error("Invalid header")]
+    InvalidHeader([u8; HEADER_LEN]),
+    #[error("Unexpected bytes")]
+    UnexpectedBytes(Vec<u8>),
+    #[error("Unsorted IDs")]
+    UnsortedIds(Vec<u64>),
+    #[error("Error reading IDs")]
+    InvalidIds,
+}
 
 pub fn read_dir<P: AsRef<Path>>(base: P) -> Box<dyn Iterator<Item = Result<Batch, Error>>> {
     std::fs::read_dir(base)
@@ -214,20 +227,6 @@ fn validate_header_lengths(
     }
 }
 
-#[derive(thiserror::Error, Debug)]
-pub enum Error {
-    #[error("I/O error")]
-    Io(#[from] std::io::Error),
-    #[error("Invalid header")]
-    InvalidHeader([u8; HEADER_LEN]),
-    #[error("Unexpected bytes")]
-    UnexpectedBytes(Vec<u8>),
-    #[error("Unsorted IDs")]
-    UnsortedIds(Vec<u64>),
-    #[error("Error reading IDs")]
-    InvalidIds,
-}
-
 fn read_ids<R: Read>(reader: &mut R, len: usize) -> Result<Vec<u64>, Error> {
     let mut result = Vec::with_capacity(len);
     let mut last = 0;
@@ -250,6 +249,45 @@ fn is_increasing(ids: &[u64]) -> bool {
     true
 }
 
+pub fn write_batch<W: std::io::Write>(writer: &mut W, batch: &Batch) -> Result<(), std::io::Error> {
+    writer.write_all(&(batch.timestamp.timestamp() as u32).to_be_bytes())?;
+    writer.write_all(&batch.user_id.to_be_bytes())?;
+
+    match &batch.follower_change {
+        Some(change) => {
+            writer.write_all(&(change.addition_ids.len() as u32).to_be_bytes())?;
+            writer.write_all(&(change.removal_ids.len() as u32).to_be_bytes())?;
+        }
+        None => {
+            writer.write_all(&u32::MAX.to_be_bytes())?;
+            writer.write_all(&u32::MAX.to_be_bytes())?;
+        }
+    }
+
+    match &batch.followed_change {
+        Some(change) => {
+            writer.write_all(&(change.addition_ids.len() as u32).to_be_bytes())?;
+            writer.write_all(&(change.removal_ids.len() as u32).to_be_bytes())?;
+        }
+        None => {
+            writer.write_all(&u32::MAX.to_be_bytes())?;
+            writer.write_all(&u32::MAX.to_be_bytes())?;
+        }
+    }
+
+    if let Some(change) = &batch.follower_change {
+        write_all(writer, &change.addition_ids)?;
+        write_all(writer, &change.removal_ids)?;
+    }
+
+    if let Some(change) = &batch.followed_change {
+        write_all(writer, &change.addition_ids)?;
+        write_all(writer, &change.removal_ids)?;
+    }
+
+    Ok(())
+}
+
 pub fn write_batches<
     W: std::io::Write,
     E: From<std::io::Error>,
@@ -262,41 +300,7 @@ pub fn write_batches<
 
     for batch in batches {
         let batch = batch?;
-
-        writer.write_all(&(batch.timestamp.timestamp() as u32).to_be_bytes())?;
-        writer.write_all(&batch.user_id.to_be_bytes())?;
-
-        match &batch.follower_change {
-            Some(change) => {
-                writer.write_all(&(change.addition_ids.len() as u32).to_be_bytes())?;
-                writer.write_all(&(change.removal_ids.len() as u32).to_be_bytes())?;
-            }
-            None => {
-                writer.write_all(&u32::MAX.to_be_bytes())?;
-                writer.write_all(&u32::MAX.to_be_bytes())?;
-            }
-        }
-
-        match &batch.followed_change {
-            Some(change) => {
-                writer.write_all(&(change.addition_ids.len() as u32).to_be_bytes())?;
-                writer.write_all(&(change.removal_ids.len() as u32).to_be_bytes())?;
-            }
-            None => {
-                writer.write_all(&u32::MAX.to_be_bytes())?;
-                writer.write_all(&u32::MAX.to_be_bytes())?;
-            }
-        }
-
-        if let Some(change) = batch.follower_change {
-            write_all(writer, &change.addition_ids)?;
-            write_all(writer, &change.removal_ids)?;
-        }
-
-        if let Some(change) = batch.followed_change {
-            write_all(writer, &change.addition_ids)?;
-            write_all(writer, &change.removal_ids)?;
-        }
+        write_batch(writer, &batch)?;
 
         count += 1;
     }
@@ -317,41 +321,4 @@ fn write_all<W: std::io::Write>(writer: &mut W, values: &[u64]) -> Result<(), st
     }
 
     Ok(())
-}
-
-pub fn date_partition_batches<E, I: Iterator<Item = Result<Batch, E>>>(
-    batches: I,
-) -> DateBatches<I> {
-    DateBatches {
-        underlying: batches.peekable(),
-    }
-}
-
-pub struct DateBatches<I: Iterator> {
-    underlying: Peekable<I>,
-}
-
-impl<E, I: Iterator<Item = Result<Batch, E>>> Iterator for DateBatches<I> {
-    type Item = Result<(NaiveDate, Vec<Batch>), E>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        self.underlying.next().map(|result| {
-            let batch = result?;
-            let date = batch.timestamp.date_naive();
-            let mut batches = vec![batch];
-
-            while let Some(next) = self.underlying.next_if(|result| {
-                result
-                    .as_ref()
-                    .map_or(false, |batch| batch.timestamp.date_naive() == date)
-            }) {
-                // We've just checked for failure so this will always add an element.
-                if let Ok(batch) = next {
-                    batches.push(batch);
-                }
-            }
-
-            Ok((date, batches))
-        })
-    }
 }

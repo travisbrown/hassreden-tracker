@@ -1,4 +1,4 @@
-use super::super::{Batch, Change};
+use super::super::super::{Batch, Change};
 use flate2::{write::GzEncoder, Compression};
 use integer_encoding::VarIntWriter;
 use std::collections::HashSet;

@@ -1,4 +1,4 @@
-use super::super::{Batch, Change};
+use super::super::super::{Batch, Change};
 use super::Error;
 use chrono::{DateTime, TimeZone, Utc};
 use flate2::read::GzDecoder;

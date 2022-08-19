@@ -1,7 +1,7 @@
 use chrono::{DateTime, Utc};
 
-pub mod archive;
-pub mod file;
+pub mod formats;
+pub mod store;
 
 #[derive(Clone, Debug, Default, Eq, Ord, PartialEq, PartialOrd)]
 pub struct Change {
