@@ -16,6 +16,8 @@ use std::collections::{HashMap, HashSet};
 use std::io::{BufRead, BufReader, BufWriter, Read, Write};
 use std::ops::Add;
 
+pub mod file;
+
 #[derive(thiserror::Error, Debug)]
 pub enum Error {
     #[error("I/O error")]
