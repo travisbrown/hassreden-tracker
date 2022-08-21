@@ -1,0 +1,201 @@
+use super::util::{SQLiteDuration, SQLiteId, SQLiteUtc};
+use chrono::{DateTime, Duration, Utc};
+use hst_deactivations::DeactivationLog;
+use hst_tw_db::ProfileDb;
+use rusqlite::{params, Connection, DropBehavior, OptionalExtension, Transaction};
+use std::cmp::Ordering;
+use std::collections::HashSet;
+use std::path::Path;
+use std::sync::{Arc, RwLock};
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TrackedUser {
+    id: u64,
+    screen_name: String,
+    target_age: Option<Duration>,
+    followers_count: usize,
+    deactivation: Option<u16>,
+    protected: bool,
+    blocks: HashSet<u64>,
+}
+
+#[derive(thiserror::Error, Debug)]
+pub enum Error {
+    #[error("I/O error")]
+    Io(#[from] std::io::Error),
+    #[error("SQLite error")]
+    Db(#[from] rusqlite::Error),
+    #[error("ProfileDB error")]
+    ProfileDb(#[from] hst_tw_db::Error),
+}
+
+const ID_SELECT: &str = "SELECT id FROM user ORDER BY id";
+
+const USER_SELECT: &str = "
+    SELECT screen_name, target_age, followers_count, deactivation, protected
+        FROM user WHERE id = ?
+";
+
+const USER_UPSERT: &str = "
+    INSERT INTO user (id, screen_name, followers_count, deactivation, protected)
+        VALUES (?, ?, ?, NULL, ?)
+        ON CONFLICT (id) DO UPDATE SET
+          screen_name = excluded.screen_name,
+          followers_count = excluded.followers_count,
+          deactivation = NULL,
+          protected = excluded.protected
+";
+
+const DEACTIVATION_UPDATE: &str = "UPDATE user SET deactivation = ? WHERE id = ?";
+
+const BLOCK_SELECT: &str = "SELECT target_id FROM block WHERE id = ?";
+
+const BLOCK_INSERT: &str = "INSERT OR IGNORE INTO block (id, target_id) VALUES (?, ?)";
+
+#[derive(Clone)]
+pub struct TrackedUserDb {
+    connection: Arc<RwLock<Connection>>,
+}
+
+impl TrackedUserDb {
+    pub fn open<P: AsRef<Path>>(path: P) -> Result<Self, Error> {
+        let exists = path.as_ref().is_file();
+        let mut connection = Connection::open(path)?;
+
+        if !exists {
+            let schema = std::include_str!("../schemas/tracked.sql");
+            connection.execute_batch(&schema)?;
+        }
+
+        Ok(Self {
+            connection: Arc::new(RwLock::new(connection)),
+        })
+    }
+
+    pub fn update_deactivations(&self, log: &DeactivationLog) -> Result<(), Error> {
+        let ids = self.ids()?;
+
+        for id in ids {
+            if let Some(status) = log.status(id) {
+                self.update_deactivation_status(id, status)?;
+            }
+        }
+
+        Ok(())
+    }
+
+    pub fn update_all<M>(
+        &self,
+        profile_db: &ProfileDb<M>,
+        ids: &HashSet<u64>,
+    ) -> Result<HashSet<u64>, Error> {
+        let ids = self.ids()?;
+        let mut not_found = HashSet::new();
+
+        for id in ids {
+            match profile_db.lookup_latest(id)? {
+                Some((_, profile)) => {
+                    let user = TrackedUser {
+                        id: profile.id(),
+                        screen_name: profile.screen_name,
+                        followers_count: profile.followers_count as usize,
+                        target_age: None,
+                        deactivation: None,
+                        protected: profile.protected,
+                        blocks: HashSet::new(),
+                    };
+
+                    self.put(&user)?;
+                }
+                None => {
+                    not_found.insert(id);
+                }
+            }
+        }
+
+        Ok(not_found)
+    }
+
+    pub fn ids(&self) -> Result<Vec<u64>, Error> {
+        let connection = self.connection.read().unwrap();
+        let mut select = connection.prepare_cached(ID_SELECT)?;
+
+        let ids = select
+            .query_map([], |row| {
+                let id: SQLiteId = row.get(0)?;
+
+                Ok(id.0)
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+
+        Ok(ids)
+    }
+
+    pub fn put(&self, user: &TrackedUser) -> Result<(), Error> {
+        let connection = self.connection.read().unwrap();
+        let mut upsert = connection.prepare_cached(USER_UPSERT)?;
+
+        upsert.execute(params![
+            SQLiteId(user.id),
+            user.screen_name,
+            user.followers_count,
+            user.protected
+        ])?;
+
+        for target_id in &user.blocks {
+            self.put_block(user.id, *target_id)?
+        }
+
+        Ok(())
+    }
+
+    pub fn put_block(&self, id: u64, target_id: u64) -> Result<(), Error> {
+        let connection = self.connection.read().unwrap();
+        let mut insert = connection.prepare_cached(BLOCK_INSERT)?;
+
+        insert.execute(params![SQLiteId(id), SQLiteId(target_id),])?;
+
+        Ok(())
+    }
+
+    pub fn update_deactivation_status(&self, id: u64, status: u32) -> Result<(), Error> {
+        let connection = self.connection.read().unwrap();
+        let mut update = connection.prepare_cached(DEACTIVATION_UPDATE)?;
+
+        update.execute(params![status, SQLiteId(id)])?;
+
+        Ok(())
+    }
+
+    pub fn get(&self, id: u64) -> Result<Option<TrackedUser>, Error> {
+        let connection = self.connection.read().unwrap();
+        let mut block_select = connection.prepare_cached(BLOCK_SELECT)?;
+
+        let blocks = block_select
+            .query_map(params![SQLiteId(id)], |row| {
+                Ok(row.get::<usize, i64>(0)? as u64)
+            })?
+            .collect::<Result<HashSet<_>, _>>()?;
+
+        let mut select = connection.prepare_cached(USER_SELECT)?;
+
+        let user: Option<TrackedUser> = select
+            .query_row(params![SQLiteId(id)], |row| {
+                let id: SQLiteId = row.get(0)?;
+                let target_age: Option<SQLiteDuration> = row.get(2)?;
+
+                Ok(TrackedUser {
+                    id: id.0,
+                    screen_name: row.get(1)?,
+                    target_age: target_age.map(|wrapped| wrapped.0),
+                    followers_count: row.get(3)?,
+                    deactivation: row.get(4)?,
+                    protected: row.get(5)?,
+                    blocks,
+                })
+            })
+            .optional()?;
+
+        Ok(user)
+    }
+}

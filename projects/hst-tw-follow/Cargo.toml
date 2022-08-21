@@ -13,7 +13,10 @@ edition = "2021"
 [dependencies]
 chrono = "0.4"
 flate2 = "1"
+hst-deactivations = { path = "../hst-deactivations" }
+hst-tw-db = { path = "../hst-tw-db" }
 integer-encoding = "3"
 rocksdb = { version = "0.19", default-features = false, features = ["zstd"] }
+rusqlite = { version = "0.28", features = ["bundled"] }
 thiserror = "1"
 zstd = "0.11"
