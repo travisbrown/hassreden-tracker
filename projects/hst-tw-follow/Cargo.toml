@@ -13,6 +13,7 @@ edition = "2021"
 [dependencies]
 chrono = "0.4"
 flate2 = "1"
+hst-cli = { path = "../hst-cli" }
 hst-deactivations = { path = "../hst-deactivations" }
 hst-tw-db = { path = "../hst-tw-db" }
 integer-encoding = "3"

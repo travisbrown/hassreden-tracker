@@ -3,7 +3,6 @@ CREATE TABLE user (
     screen_name TEXT NOT NULL,
     target_age INTEGER,
     followers_count INTEGER NOT NULL,
-    deactivation INTEGER,
     protected BOOLEAN
 );
 

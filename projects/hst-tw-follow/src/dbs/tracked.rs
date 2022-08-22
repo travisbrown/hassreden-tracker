@@ -1,10 +1,9 @@
 use super::util::{SQLiteDuration, SQLiteId, SQLiteUtc};
 use chrono::{DateTime, Duration, Utc};
-use hst_deactivations::DeactivationLog;
 use hst_tw_db::ProfileDb;
-use rusqlite::{params, Connection, DropBehavior, OptionalExtension, Transaction};
+use rusqlite::{params, Connection, DropBehavior, OptionalExtension, Row, Transaction};
 use std::cmp::Ordering;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use std::sync::{Arc, RwLock};
 
@@ -14,7 +13,6 @@ pub struct TrackedUser {
     screen_name: String,
     target_age: Option<Duration>,
     followers_count: usize,
-    deactivation: Option<u16>,
     protected: bool,
     blocks: HashSet<u64>,
 }
@@ -32,24 +30,24 @@ pub enum Error {
 const ID_SELECT: &str = "SELECT id FROM user ORDER BY id";
 
 const USER_SELECT: &str = "
-    SELECT screen_name, target_age, followers_count, deactivation, protected
+    SELECT id, screen_name, target_age, followers_count, protected
         FROM user WHERE id = ?
 ";
 
+const USER_SELECT_ALL: &str =
+    "SELECT screen_name, target_age, followers_count, protected FROM user ORDER BY id";
+
 const USER_UPSERT: &str = "
-    INSERT INTO user (id, screen_name, followers_count, deactivation, protected)
+    INSERT INTO user (id, screen_name, followers_count, protected)
         VALUES (?, ?, ?, NULL, ?)
         ON CONFLICT (id) DO UPDATE SET
           screen_name = excluded.screen_name,
           followers_count = excluded.followers_count,
-          deactivation = NULL,
           protected = excluded.protected
 ";
 
-const DEACTIVATION_UPDATE: &str = "UPDATE user SET deactivation = ? WHERE id = ?";
-
 const BLOCK_SELECT: &str = "SELECT target_id FROM block WHERE id = ?";
-
+const BLOCK_SELECT_ALL: &str = "SELECT target_id FROM block ORDER BY id, target_id";
 const BLOCK_INSERT: &str = "INSERT OR IGNORE INTO block (id, target_id) VALUES (?, ?)";
 
 #[derive(Clone)]
@@ -72,24 +70,15 @@ impl TrackedUserDb {
         })
     }
 
-    pub fn update_deactivations(&self, log: &DeactivationLog) -> Result<(), Error> {
-        let ids = self.ids()?;
-
-        for id in ids {
-            if let Some(status) = log.status(id) {
-                self.update_deactivation_status(id, status)?;
-            }
-        }
-
-        Ok(())
-    }
-
     pub fn update_all<M>(
         &self,
         profile_db: &ProfileDb<M>,
-        ids: &HashSet<u64>,
+        ids: Option<HashSet<u64>>,
     ) -> Result<HashSet<u64>, Error> {
-        let ids = self.ids()?;
+        let ids = match ids {
+            Some(ids) => ids,
+            None => self.ids()?.into_iter().collect(),
+        };
         let mut not_found = HashSet::new();
 
         for id in ids {
@@ -100,7 +89,6 @@ impl TrackedUserDb {
                         screen_name: profile.screen_name,
                         followers_count: profile.followers_count as usize,
                         target_age: None,
-                        deactivation: None,
                         protected: profile.protected,
                         blocks: HashSet::new(),
                     };
@@ -114,21 +102,6 @@ impl TrackedUserDb {
         }
 
         Ok(not_found)
-    }
-
-    pub fn ids(&self) -> Result<Vec<u64>, Error> {
-        let connection = self.connection.read().unwrap();
-        let mut select = connection.prepare_cached(ID_SELECT)?;
-
-        let ids = select
-            .query_map([], |row| {
-                let id: SQLiteId = row.get(0)?;
-
-                Ok(id.0)
-            })?
-            .collect::<Result<Vec<_>, _>>()?;
-
-        Ok(ids)
     }
 
     pub fn put(&self, user: &TrackedUser) -> Result<(), Error> {
@@ -158,44 +131,97 @@ impl TrackedUserDb {
         Ok(())
     }
 
-    pub fn update_deactivation_status(&self, id: u64, status: u32) -> Result<(), Error> {
-        let connection = self.connection.read().unwrap();
-        let mut update = connection.prepare_cached(DEACTIVATION_UPDATE)?;
-
-        update.execute(params![status, SQLiteId(id)])?;
-
-        Ok(())
-    }
-
     pub fn get(&self, id: u64) -> Result<Option<TrackedUser>, Error> {
         let connection = self.connection.read().unwrap();
         let mut block_select = connection.prepare_cached(BLOCK_SELECT)?;
 
         let blocks = block_select
             .query_map(params![SQLiteId(id)], |row| {
-                Ok(row.get::<usize, i64>(0)? as u64)
+                let id: SQLiteId = row.get(0)?;
+                Ok(id.0)
             })?
             .collect::<Result<HashSet<_>, _>>()?;
 
         let mut select = connection.prepare_cached(USER_SELECT)?;
 
-        let user: Option<TrackedUser> = select
-            .query_row(params![SQLiteId(id)], |row| {
-                let id: SQLiteId = row.get(0)?;
-                let target_age: Option<SQLiteDuration> = row.get(2)?;
-
-                Ok(TrackedUser {
-                    id: id.0,
-                    screen_name: row.get(1)?,
-                    target_age: target_age.map(|wrapped| wrapped.0),
-                    followers_count: row.get(3)?,
-                    deactivation: row.get(4)?,
-                    protected: row.get(5)?,
-                    blocks,
-                })
-            })
+        let mut user: Option<TrackedUser> = select
+            .query_row(params![SQLiteId(id)], row_to_user)
             .optional()?;
+
+        if let Some(ref mut user) = user {
+            user.blocks = blocks;
+        }
 
         Ok(user)
     }
+
+    pub fn ids(&self) -> Result<Vec<u64>, Error> {
+        let connection = self.connection.read().unwrap();
+        let mut select = connection.prepare_cached(ID_SELECT)?;
+
+        let ids = select
+            .query_map([], |row| {
+                let id: SQLiteId = row.get(0)?;
+                Ok(id.0)
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+
+        Ok(ids)
+    }
+
+    pub fn users(&self) -> Result<Vec<TrackedUser>, Error> {
+        let connection = self.connection.read().unwrap();
+        let mut block_select_all = connection.prepare_cached(BLOCK_SELECT_ALL)?;
+
+        let block_pairs = block_select_all
+            .query_map([], |row| {
+                let id: SQLiteId = row.get(0)?;
+                let target_id: SQLiteId = row.get(1)?;
+                Ok((id.0, target_id.0))
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+
+        let mut blocks: HashMap<u64, HashSet<u64>> = HashMap::new();
+
+        for (id, target_id) in block_pairs {
+            blocks.entry(id).or_default().insert(target_id);
+        }
+
+        let mut select_all = connection.prepare_cached(USER_SELECT_ALL)?;
+
+        let mut users = select_all
+            .query_map(params![], |row| row_to_user(row))?
+            .collect::<Result<Vec<_>, _>>()?;
+
+        for mut user in &mut users {
+            if let Some(blocks) = blocks.remove(&user.id) {
+                user.blocks = blocks;
+            }
+        }
+
+        Ok(users)
+    }
+
+    pub fn export(&self) -> Result<Vec<(u64, String, Option<Duration>)>, Error> {
+        let users = self.users()?;
+
+        Ok(users
+            .into_iter()
+            .map(|user| (user.id, user.screen_name, user.target_age))
+            .collect())
+    }
+}
+
+fn row_to_user<'stmt>(row: &Row<'stmt>) -> Result<TrackedUser, rusqlite::Error> {
+    let id: SQLiteId = row.get(0)?;
+    let target_age: Option<SQLiteDuration> = row.get(2)?;
+
+    Ok(TrackedUser {
+        id: id.0,
+        screen_name: row.get(1)?,
+        target_age: target_age.map(|wrapped| wrapped.0),
+        followers_count: row.get(3)?,
+        protected: row.get(4)?,
+        blocks: HashSet::new(),
+    })
 }
