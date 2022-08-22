@@ -27,7 +27,12 @@ impl DeactivationFile {
 
     pub fn lookup(&self, user_id: u64) -> Option<Vec<Entry>> {
         let log = self.log.read().unwrap();
-        log.entries.get(&user_id).cloned()
+        log.lookup(user_id)
+    }
+
+    pub fn status(&self, user_id: u64) -> Option<u32> {
+        let log = self.log.read().unwrap();
+        log.status(user_id)
     }
 
     pub fn flush(&self) -> Result<(), Error> {

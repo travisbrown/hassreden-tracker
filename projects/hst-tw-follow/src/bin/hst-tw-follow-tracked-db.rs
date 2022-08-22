@@ -1,10 +1,6 @@
 use hst_cli::prelude::*;
-use hst_tw_db::{
-    table::{ReadOnly, Table},
-    ProfileDb,
-};
+use hst_tw_db::{table::ReadOnly, ProfileDb};
 use hst_tw_follow::dbs::tracked::TrackedUserDb;
-use std::collections::HashSet;
 use std::io::BufRead;
 
 fn main() -> Result<(), Error> {
@@ -23,16 +19,37 @@ fn main() -> Result<(), Error> {
             }
         }
         Command::Create { profiles } => {
-            let ids = std::io::stdin()
+            let users = std::io::stdin()
                 .lock()
                 .lines()
                 .map(|result| {
                     result.map_err(Error::from).and_then(|line| {
-                        line.parse::<u64>()
-                            .map_err(|_| Error::InvalidId(line.clone()))
+                        let parts = line.split(',').collect::<Vec<_>>();
+
+                        if parts.len() != 3 {
+                            Err(Error::InvalidImportLine(line.clone()))
+                        } else {
+                            let id = parts[0]
+                                .parse::<u64>()
+                                .map_err(|_| Error::InvalidImportLine(line.clone()))?;
+                            let screen_name = parts[1].to_string();
+                            let target_age = if parts[2].is_empty() {
+                                None
+                            } else {
+                                Some(
+                                    parts[2]
+                                        .parse::<u32>()
+                                        .map_err(|_| Error::InvalidImportLine(line.clone()))?,
+                                )
+                            };
+
+                            Ok((id, screen_name, target_age))
+                        }
                     })
                 })
-                .collect::<Result<HashSet<_>, _>>()?;
+                .collect::<Result<Vec<_>, _>>()?;
+
+            let ids = users.iter().map(|(id, _, _)| *id).collect();
 
             let profile_db = ProfileDb::<ReadOnly>::open(profiles, false)?;
             let missing_ids = db.update_all(&profile_db, Some(ids))?;
@@ -62,8 +79,8 @@ fn main() -> Result<(), Error> {
 pub enum Error {
     #[error("I/O error")]
     Io(#[from] std::io::Error),
-    #[error("Invalid ID")]
-    InvalidId(String),
+    #[error("Invalid import line")]
+    InvalidImportLine(String),
     #[error("ProfileDb error")]
     ProfileDb(#[from] hst_tw_db::Error),
     #[error("TrackedUserDb error")]

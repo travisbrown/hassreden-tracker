@@ -3,6 +3,7 @@ use chrono::{DateTime, Utc};
 pub mod age;
 pub mod dbs;
 pub mod formats;
+pub mod session;
 pub mod store;
 
 #[derive(Clone, Debug, Default, Eq, Ord, PartialEq, PartialOrd)]

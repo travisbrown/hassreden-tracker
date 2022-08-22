@@ -12,7 +12,6 @@ use zstd::stream::{read::Decoder, write::Encoder};
 
 const CURRENT_FILE_NAME: &str = "current.bin";
 const PAST_DIR_NAME: &str = "past";
-const RUN_DURATION_BUFFER_S: i64 = 20 * 60;
 const ZSTD_LEVEL: i32 = 7;
 
 #[derive(thiserror::Error, Debug)]
@@ -173,7 +172,7 @@ pub struct Store {
 }
 
 impl Store {
-    pub fn load<P: AsRef<Path>>(base: P) -> Result<Self, Error> {
+    pub fn open<P: AsRef<Path>>(base: P) -> Result<Self, Error> {
         let store = Self {
             base: base.as_ref().to_path_buf().into_boxed_path(),
             state: RwLock::new(State::new(base.as_ref().join(CURRENT_FILE_NAME))?),
@@ -239,7 +238,7 @@ impl Store {
         self.base.join(CURRENT_FILE_NAME).into_boxed_path()
     }
 
-    fn past_batches(&self) -> PastBatchIterator<ZstFollowReader<'_>> {
+    pub fn past_batches(&self) -> PastBatchIterator<ZstFollowReader<'_>> {
         std::fs::read_dir(self.past_dir_path())
             .map_err(Error::from)
             .and_then(|entries| {
@@ -286,42 +285,51 @@ impl Store {
     }
 
     /// Moves all batches from previous days in the current workspace into the past directory.
-    pub fn archive(&self) -> Result<usize, Error> {
+    pub fn archive(&self) -> Result<Option<usize>, Error> {
         let mut state = self.state.write().unwrap();
         state.writer.flush()?;
 
         let file = File::open(self.current_file_path())?;
-        let mut by_date = HashMap::new();
+        let mut to_archive = HashMap::new();
+        let mut current = vec![];
+        let current_date = Utc::now().date_naive();
 
         for result in FollowReader::new(BufReader::new(file)) {
             let batch = result?;
-            by_date
-                .entry(batch.timestamp.date_naive())
-                .or_insert_with(Vec::new)
-                .push(batch);
+            let batch_date = batch.timestamp.date_naive();
+
+            if batch_date == current_date {
+                current.push(batch);
+            } else {
+                to_archive
+                    .entry(batch_date)
+                    .or_insert_with(Vec::new)
+                    .push(batch);
+            }
         }
 
-        let mut batches = by_date.into_iter().collect::<Vec<_>>();
-        batches.sort();
-
-        let current_date = Utc::now().date_naive();
-        let to_archive = batches
-            .iter()
-            .filter(|(date, _)| *date != current_date)
-            .collect::<Vec<_>>();
-
-        if !to_archive.is_empty() {
-            let by_path = to_archive
+        if to_archive.is_empty() {
+            Ok(None)
+        } else {
+            let mut by_path = to_archive
                 .iter()
-                .map(|(date, batches)| (self.past_date_path(*date), batches))
+                .map(|(&date, batches)| (date, self.past_date_path(date), batches))
                 .collect::<Vec<_>>();
 
-            if let Some((path, _)) = by_path.iter().find(|(path, _)| path.exists()) {
-                Err(Error::PastFileCollision(path.clone()))
+            by_path.sort();
+
+            if let Some(path) = by_path.iter().find_map(|(_, path, _)| {
+                if path.exists() {
+                    Some(path.clone())
+                } else {
+                    None
+                }
+            }) {
+                Err(Error::PastFileCollision(path))
             } else {
                 let mut archived_count = 0;
 
-                for (path, batches) in by_path {
+                for (_, path, batches) in by_path {
                     let file = OpenOptions::new().write(true).create_new(true).open(path)?;
                     let mut writer = Encoder::new(file, ZSTD_LEVEL)?.auto_finish();
 
@@ -331,29 +339,48 @@ impl Store {
                     }
                 }
 
+                current.sort();
+
                 let file = File::create(self.current_file_path())?;
                 state.writer = BufWriter::new(file);
 
-                if let Some((_, batches)) = batches.iter().find(|(date, _)| *date == current_date) {
-                    for batch in batches {
-                        write_batch(&mut state.writer, batch)?;
-                    }
+                for batch in current {
+                    write_batch(&mut state.writer, &batch)?;
                 }
 
-                Ok(archived_count)
+                Ok(Some(archived_count))
             }
-        } else {
-            Ok(0)
         }
     }
 
-    /// Declares an intention to scrape this account, reserving it for an amount of time estimated from the given approximate follower count.
+    /// Returns an unordered list of un-checked-out users and their last update time.
+    pub fn user_updates(&self) -> Vec<(u64, DateTime<Utc>)> {
+        let now = Utc::now();
+
+        let mut state = self.state.read().unwrap();
+        let mut user_ages = Vec::with_capacity(state.users.len());
+
+        for (&id, user_state) in &state.users {
+            if user_state
+                .expiration
+                .filter(|&expiration| expiration > now)
+                .is_none()
+            {
+                user_ages.push((id, user_state.last_update));
+            }
+        }
+
+        user_ages
+    }
+
+    /// Declares an intention to scrape this account, reserving it for an amount of time estimated
+    /// from the given approximate follower and following count.
     ///
     /// Result will be empty if the account is already reserved.
     pub fn check_out(
         &self,
         user_id: u64,
-        count_estimate: usize,
+        estimated_run_duration: Duration,
     ) -> Result<Option<DateTime<Utc>>, Error> {
         let now = Utc::now();
 
@@ -368,7 +395,7 @@ impl Store {
             .filter(|&expiration| expiration > now)
             .is_none()
         {
-            user_state.expiration = Some(now + estimate_run_duration(count_estimate));
+            user_state.expiration = Some(now + estimated_run_duration);
             Ok(Some(user_state.last_update))
         } else {
             Ok(None)
@@ -406,8 +433,6 @@ impl Store {
 
         Ok(())
     }
-
-    //·pub ages(&self) -> Vec<
 }
 
 type ZstFollowReader<'a> = FollowReader<BufReader<Decoder<'a, BufReader<File>>>>;
@@ -462,9 +487,4 @@ fn extract_path_date<P: AsRef<Path>>(path: P) -> Result<NaiveDate, Error> {
 
     NaiveDate::parse_from_str(date_str, "%Y-%m-%d")
         .map_err(|_| Error::InvalidPastFile(path.as_ref().to_path_buf().into_boxed_path()))
-}
-
-fn estimate_run_duration(count: usize) -> Duration {
-    Duration::seconds((((count / 75000) + 1) * 15 * 60) as i64)
-        + Duration::seconds(RUN_DURATION_BUFFER_S)
 }

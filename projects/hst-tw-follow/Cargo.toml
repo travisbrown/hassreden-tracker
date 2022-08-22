@@ -12,6 +12,8 @@ edition = "2021"
 
 [dependencies]
 chrono = "0.4"
+egg-mode = "0.16"
+egg-mode-extras = "0.2"
 flate2 = "1"
 hst-cli = { path = "../hst-cli" }
 hst-deactivations = { path = "../hst-deactivations" }
@@ -20,4 +22,5 @@ integer-encoding = "3"
 rocksdb = { version = "0.19", default-features = false, features = ["zstd"] }
 rusqlite = { version = "0.28", features = ["bundled"] }
 thiserror = "1"
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 zstd = "0.11"

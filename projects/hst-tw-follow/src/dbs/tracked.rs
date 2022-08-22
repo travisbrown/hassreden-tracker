@@ -9,12 +9,12 @@ use std::sync::{Arc, RwLock};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct TrackedUser {
-    id: u64,
+    pub id: u64,
     screen_name: String,
-    target_age: Option<Duration>,
-    followers_count: usize,
-    protected: bool,
-    blocks: HashSet<u64>,
+    pub target_age: Option<Duration>,
+    pub followers_count: usize,
+    pub protected: bool,
+    pub blocks: HashSet<u64>,
 }
 
 #[derive(thiserror::Error, Debug)]
@@ -35,11 +35,11 @@ const USER_SELECT: &str = "
 ";
 
 const USER_SELECT_ALL: &str =
-    "SELECT screen_name, target_age, followers_count, protected FROM user ORDER BY id";
+    "SELECT id, screen_name, target_age, followers_count, protected FROM user ORDER BY id";
 
 const USER_UPSERT: &str = "
     INSERT INTO user (id, screen_name, followers_count, protected)
-        VALUES (?, ?, ?, NULL, ?)
+        VALUES (?, ?, ?, ?)
         ON CONFLICT (id) DO UPDATE SET
           screen_name = excluded.screen_name,
           followers_count = excluded.followers_count,
@@ -74,12 +74,12 @@ impl TrackedUserDb {
         &self,
         profile_db: &ProfileDb<M>,
         ids: Option<HashSet<u64>>,
-    ) -> Result<HashSet<u64>, Error> {
+    ) -> Result<Vec<u64>, Error> {
         let ids = match ids {
             Some(ids) => ids,
             None => self.ids()?.into_iter().collect(),
         };
-        let mut not_found = HashSet::new();
+        let mut not_found = vec![];
 
         for id in ids {
             match profile_db.lookup_latest(id)? {
@@ -96,10 +96,12 @@ impl TrackedUserDb {
                     self.put(&user)?;
                 }
                 None => {
-                    not_found.insert(id);
+                    not_found.push(id);
                 }
             }
         }
+
+        not_found.sort_unstable();
 
         Ok(not_found)
     }
