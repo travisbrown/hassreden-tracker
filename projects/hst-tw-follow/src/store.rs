@@ -256,7 +256,7 @@ impl Store {
                 Ok(paths)
             })
             .map_or_else(
-                |error| PastBatchIterator::Failed(Some(Error::from(error))),
+                |error| PastBatchIterator::Failed(Some(error)),
                 |paths| PastBatchIterator::Remaining {
                     paths,
                     current: None,
@@ -357,7 +357,7 @@ impl Store {
     pub fn user_updates(&self) -> Vec<(u64, DateTime<Utc>)> {
         let now = Utc::now();
 
-        let mut state = self.state.read().unwrap();
+        let state = self.state.read().unwrap();
         let mut user_ages = Vec::with_capacity(state.users.len());
 
         for (&id, user_state) in &state.users {
@@ -412,11 +412,11 @@ impl Store {
             let (date, batch) = result?;
 
             if date != batch.timestamp.date_naive() || last_timestamp > batch.timestamp {
-                return Err(Error::InvalidBatch(batch.clone()));
+                return Err(Error::InvalidBatch(batch));
             }
 
             if last_timestamp == batch.timestamp && last_user_id >= batch.user_id {
-                return Err(Error::InvalidBatch(batch.clone()));
+                return Err(Error::InvalidBatch(batch));
             }
 
             last_timestamp = batch.timestamp;
@@ -427,7 +427,7 @@ impl Store {
 
         for batch in self.current_batches()? {
             if batch.timestamp.date_naive() != now_date {
-                return Err(Error::InvalidBatch(batch.clone()));
+                return Err(Error::InvalidBatch(batch));
             }
         }
 

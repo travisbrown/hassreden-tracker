@@ -41,7 +41,7 @@ impl ProfileAgeDb {
             options.enable_statistics();
         }
 
-        let mut transaction_options = TransactionDBOptions::default();
+        let transaction_options = TransactionDBOptions::default();
 
         let db = TransactionDB::open(&options, &transaction_options, path)?;
 

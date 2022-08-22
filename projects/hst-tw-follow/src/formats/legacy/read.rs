@@ -8,9 +8,11 @@ use std::fs::File;
 use std::io::{BufRead, BufReader, Read};
 use std::path::Path;
 
+type FileInfo = (DateTime<Utc>, u64, Option<Box<Path>>, Option<Box<Path>>);
+
 pub enum BatchIterator {
     Failed(Option<Error>),
-    Remaining(Vec<(DateTime<Utc>, u64, Option<Box<Path>>, Option<Box<Path>>)>),
+    Remaining(Vec<FileInfo>),
 }
 
 impl BatchIterator {
@@ -52,9 +54,7 @@ impl Iterator for BatchIterator {
     }
 }
 
-fn list_batch_files<P: AsRef<Path>>(
-    base: P,
-) -> Result<Vec<(DateTime<Utc>, u64, Option<Box<Path>>, Option<Box<Path>>)>, Error> {
+fn list_batch_files<P: AsRef<Path>>(base: P) -> Result<Vec<FileInfo>, Error> {
     let mut results = vec![];
 
     for entry in std::fs::read_dir(&base)? {

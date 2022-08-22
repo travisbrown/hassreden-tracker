@@ -8,6 +8,13 @@ use std::path::Path;
 const HEADER_LEN: usize = 28;
 const MAX_ENTRY_LEN: u32 = u32::MAX / 4;
 
+type Header = (
+    DateTime<Utc>,
+    u64,
+    Option<(usize, usize)>,
+    Option<(usize, usize)>,
+);
+
 #[derive(thiserror::Error, Debug)]
 pub enum Error {
     #[error("I/O error")]
@@ -117,17 +124,7 @@ impl<R: Read> FollowReader<R> {
         }
     }
 
-    fn read_header(
-        &mut self,
-    ) -> Result<
-        Option<(
-            DateTime<Utc>,
-            u64,
-            Option<(usize, usize)>,
-            Option<(usize, usize)>,
-        )>,
-        Error,
-    > {
+    fn read_header(&mut self) -> Result<Option<Header>, Error> {
         match self.reader.read_exact(&mut self.header_buffer) {
             Err(error) if error.kind() == std::io::ErrorKind::UnexpectedEof => Ok(None),
             Err(error) => Err(Error::from(error)),
@@ -185,12 +182,14 @@ impl<R: Read> FollowReader<R> {
     }
 }
 
+type HeaderLengths = (Option<(usize, usize)>, Option<(usize, usize)>);
+
 fn validate_header_lengths(
     follower_addition_len: u32,
     follower_removal_len: u32,
     followed_addition_len: u32,
     followed_removal_len: u32,
-) -> Option<(Option<(usize, usize)>, Option<(usize, usize)>)> {
+) -> Option<HeaderLengths> {
     let follower_addition_empty = follower_addition_len == u32::MAX;
     let follower_removal_empty = follower_removal_len == u32::MAX;
     let followed_addition_empty = followed_addition_len == u32::MAX;

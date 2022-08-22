@@ -1,8 +1,7 @@
-use super::util::{SQLiteDuration, SQLiteId, SQLiteUtc};
-use chrono::{DateTime, Duration, Utc};
+use super::util::{SQLiteDuration, SQLiteId};
+use chrono::Duration;
 use hst_tw_db::ProfileDb;
-use rusqlite::{params, Connection, DropBehavior, OptionalExtension, Row, Transaction};
-use std::cmp::Ordering;
+use rusqlite::{params, Connection, OptionalExtension, Row};
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use std::sync::{Arc, RwLock};
@@ -58,11 +57,11 @@ pub struct TrackedUserDb {
 impl TrackedUserDb {
     pub fn open<P: AsRef<Path>>(path: P) -> Result<Self, Error> {
         let exists = path.as_ref().is_file();
-        let mut connection = Connection::open(path)?;
+        let connection = Connection::open(path)?;
 
         if !exists {
             let schema = std::include_str!("../schemas/tracked.sql");
-            connection.execute_batch(&schema)?;
+            connection.execute_batch(schema)?;
         }
 
         Ok(Self {
@@ -192,7 +191,7 @@ impl TrackedUserDb {
         let mut select_all = connection.prepare_cached(USER_SELECT_ALL)?;
 
         let mut users = select_all
-            .query_map(params![], |row| row_to_user(row))?
+            .query_map(params![], row_to_user)?
             .collect::<Result<Vec<_>, _>>()?;
 
         for mut user in &mut users {
@@ -214,7 +213,7 @@ impl TrackedUserDb {
     }
 }
 
-fn row_to_user<'stmt>(row: &Row<'stmt>) -> Result<TrackedUser, rusqlite::Error> {
+fn row_to_user(row: &Row) -> Result<TrackedUser, rusqlite::Error> {
     let id: SQLiteId = row.get(0)?;
     let target_age: Option<SQLiteDuration> = row.get(2)?;
 

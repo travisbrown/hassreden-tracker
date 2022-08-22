@@ -6,7 +6,6 @@ use crate::{
 use chrono::{Duration, Utc};
 use egg_mode_extras::{client::TokenType, Client};
 use hst_deactivations::file::DeactivationFile;
-use std::cmp::Reverse;
 use std::collections::HashMap;
 use std::path::Path;
 
