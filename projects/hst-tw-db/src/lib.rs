@@ -103,17 +103,16 @@ impl<M> ProfileDb<M> {
         target_user_id: u64,
     ) -> Result<Option<(DateTime<Utc>, User)>, Error> {
         let prefix = target_user_id.to_be_bytes();
-        let iter = self.db.prefix_iterator(prefix);
+        let mut iter = self.db.prefix_iterator(prefix);
         let mut latest = None;
 
-        for result in iter {
+        if let Some(result) = iter.next() {
             let (key, value) = result?;
             let (user_id, snapshot) = key_to_pair(&key)?;
 
             if user_id == target_user_id {
                 latest = Some((snapshot, parse_value(value)?));
             }
-            break;
         }
 
         Ok(latest)
