@@ -1,4 +1,5 @@
 use super::{DeactivationLog, Entry, Error};
+use chrono::{DateTime, Utc};
 use std::fs::File;
 use std::path::Path;
 use std::sync::{Arc, RwLock};
@@ -33,6 +34,11 @@ impl DeactivationFile {
     pub fn status(&self, user_id: u64) -> Option<u32> {
         let log = self.log.read().unwrap();
         log.status(user_id)
+    }
+
+    pub fn add(&self, user_id: u64, status: u32, observed: DateTime<Utc>) {
+        let mut log = self.log.write().unwrap();
+        log.add(user_id, status, observed);
     }
 
     pub fn flush(&self) -> Result<(), Error> {

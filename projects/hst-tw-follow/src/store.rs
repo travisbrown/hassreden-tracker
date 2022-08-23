@@ -402,6 +402,22 @@ impl Store {
         }
     }
 
+    pub fn make_batch(
+        &self,
+        user_id: u64,
+        follower_ids: HashSet<u64>,
+        following_ids: HashSet<u64>,
+    ) -> Batch {
+        let state = self.state.read().unwrap();
+
+        state.make_batch(user_id, follower_ids, following_ids)
+    }
+
+    pub fn update_and_write(&self, batch: &Batch, last_update: DateTime<Utc>) -> Result<(), Error> {
+        let mut state = self.state.write().unwrap();
+        state.update_and_write(batch, last_update)
+    }
+
     pub fn validate(&self) -> Result<(), Error> {
         let mut last_timestamp = DateTime::<Utc>::MIN_UTC;
         let mut last_user_id = 0;

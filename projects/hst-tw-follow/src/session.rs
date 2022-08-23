@@ -28,6 +28,13 @@ pub enum Error {
     Deactivations(#[from] hst_deactivations::Error),
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum UnavailableStatus {
+    Block,
+    Deactivated,
+    Suspended,
+}
+
 #[derive(Debug)]
 pub enum RunInfo {
     Archived {
@@ -37,10 +44,10 @@ pub enum RunInfo {
         batch: Batch,
     },
     /// Indicates that we need to check whether the user is protected or blocks our account.
-    UnavailableUser {
+    Unavailable {
         id: u64,
+        status: UnavailableStatus,
     },
-    Next(u64, Duration),
 }
 
 pub struct Session {
@@ -113,18 +120,50 @@ impl Session {
                 .into_iter()
                 .max_by_key(|(id, _, diff)| (*diff, *id))
             {
-                Some((id, user, diff)) => {
-                    self.store.check_out(
+                Some((id, user, _)) => {
+                    if let Some(last_update) = self.store.check_out(
                         id,
                         estimate_run_duration(
                             user.map(|user| user.followers_count).unwrap_or(15_000),
                         ),
-                    )?;
-                    Ok(Some(RunInfo::Next(id, diff)))
+                    )? {
+                        match scrape_follows(&self.twitter_client, token_type, id).await? {
+                            Ok((follower_ids, followed_ids)) => {
+                                let batch = self.store.make_batch(id, follower_ids, followed_ids);
+                                self.store.update_and_write(&batch, last_update)?;
+
+                                Ok(Some(RunInfo::Scraped { batch }))
+                            }
+                            Err(status) => {
+                                match status {
+                                    UnavailableStatus::Block => {
+                                        self.tracked
+                                            .put_block(id, self.twitter_client.user_id())?;
+                                    }
+                                    UnavailableStatus::Deactivated => {
+                                        self.deactivations.add(id, 50, Utc::now());
+                                        self.deactivations.flush()?;
+                                    }
+                                    UnavailableStatus::Suspended => {
+                                        self.deactivations.add(id, 63, Utc::now());
+                                        self.deactivations.flush()?;
+                                    }
+                                }
+
+                                Ok(Some(RunInfo::Unavailable { id, status }))
+                            }
+                        }
+                    } else {
+                        Ok(None)
+                    }
                 }
                 None => Ok(None),
             }
         }
+    }
+
+    pub async fn scrape(&self, token_type: TokenType, user_id: u64, ) -> Result<Option<RunInfo>, Error> {
+        let user = tracked_users.get(&id);
     }
 }
 
@@ -132,38 +171,45 @@ async fn scrape_follows(
     client: &Client,
     token_type: TokenType,
     id: u64,
-) -> Result<(HashSet<u64>, HashSet<u64>), Error> {
-    let followers_ids = client
+) -> Result<Result<(HashSet<u64>, HashSet<u64>), UnavailableStatus>, Error> {
+    let follower_ids_lookup = client
         .follower_ids(id, token_type)
         .try_collect::<HashSet<_>>();
-    let following_ids = client
+    let followed_ids_lookup = client
         .followed_ids(id, token_type)
         .try_collect::<HashSet<_>>();
 
-    futures::try_join!(
-        followers_ids.map_err(Error::from),
-        following_ids.map_err(Error::from)
-    )
+    match futures::try_join!(
+        follower_ids_lookup.map_err(Error::from),
+        followed_ids_lookup.map_err(Error::from)
+    ) {
+        Ok(pair) => Ok(Ok(pair)),
+        Err(error) => check_unavailable_reason(&client, id, &error)
+            .await
+            .map_or_else(|| Err(error), |status| Ok(Err(status))),
+    }
 }
 
+/// Check whether a user token unauthorized error indicates a block, etc.
 pub async fn check_unavailable_reason(
     client: &Client,
     id: u64,
-    error: Error,
-) -> Result<UnavailableReason, Error> {
+    error: &Error,
+) -> Option<UnavailableStatus> {
     match error {
         Error::EggMode(error)
-            if UnavailableReason::from(&error) == UnavailableReason::Unauthorized =>
+            if UnavailableReason::from(error) == UnavailableReason::Unauthorized =>
         {
             match client.lookup_user_or_status(id, TokenType::App).await {
-                Ok(user) => Ok(UnavailableReason::Unauthorized),
+                Ok(user) => Some(UnavailableStatus::Block),
                 Err(client_error) => match UnavailableReason::from(&client_error) {
-                    UnavailableReason::Other => Err(Error::from(error)),
-                    other => Ok(other),
+                    UnavailableReason::Suspended => Some(UnavailableStatus::Suspended),
+                    UnavailableReason::Deactivated => Some(UnavailableStatus::Deactivated),
+                    _ => None,
                 },
             }
         }
-        _ => Err(error),
+        _ => None,
     }
 }
 

@@ -283,6 +283,27 @@ impl DeactivationLog {
 
         Ok(())
     }
+
+    pub fn add(&mut self, user_id: u64, status: u32, observed: DateTime<Utc>) {
+        let mut singleton_entries = HashMap::new();
+        singleton_entries.insert(
+            user_id,
+            vec![Entry {
+                status,
+                observed,
+                reversal: None,
+            }],
+        );
+
+        let singleton_log = Self {
+            entries: singleton_entries,
+        };
+
+        let self_log: &Self = self;
+        let new_log = self_log + &singleton_log;
+
+        self.entries = new_log.entries;
+    }
 }
 
 impl Add for &DeactivationLog {
