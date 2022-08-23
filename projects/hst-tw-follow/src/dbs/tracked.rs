@@ -36,6 +36,8 @@ const USER_SELECT: &str = "
 const USER_SELECT_ALL: &str =
     "SELECT id, screen_name, target_age, followers_count, protected FROM user ORDER BY id";
 
+const USER_UPDATE_PROTECTED: &str = "UPDATE user SET protected = ? WHERE id = ?";
+
 const USER_UPSERT: &str = "
     INSERT INTO user (id, screen_name, followers_count, protected)
         VALUES (?, ?, ?, ?)
@@ -46,7 +48,7 @@ const USER_UPSERT: &str = "
 ";
 
 const BLOCK_SELECT: &str = "SELECT target_id FROM block WHERE id = ?";
-const BLOCK_SELECT_ALL: &str = "SELECT target_id FROM block ORDER BY id, target_id";
+const BLOCK_SELECT_ALL: &str = "SELECT id, target_id FROM block ORDER BY id, target_id";
 const BLOCK_INSERT: &str = "INSERT OR IGNORE INTO block (id, target_id) VALUES (?, ?)";
 
 #[derive(Clone)]
@@ -128,6 +130,15 @@ impl TrackedUserDb {
         let mut insert = connection.prepare_cached(BLOCK_INSERT)?;
 
         insert.execute(params![SQLiteId(id), SQLiteId(target_id),])?;
+
+        Ok(())
+    }
+
+    pub fn set_protected(&self, id: u64, protected: bool) -> Result<(), Error> {
+        let connection = self.connection.read().unwrap();
+        let mut update = connection.prepare_cached(USER_UPDATE_PROTECTED)?;
+
+        update.execute(params![SQLiteId(id), protected])?;
 
         Ok(())
     }

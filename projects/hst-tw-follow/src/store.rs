@@ -91,7 +91,36 @@ impl State {
                 )
             }
             Some(user_state) => {
-                todo!()
+                let mut follower_addition_ids = follower_ids
+                    .difference(&user_state.followers)
+                    .copied()
+                    .collect::<Vec<_>>();
+                let mut follower_removal_ids = user_state
+                    .followers
+                    .difference(&follower_ids)
+                    .copied()
+                    .collect::<Vec<_>>();
+                let mut followed_addition_ids = following_ids
+                    .difference(&user_state.following)
+                    .copied()
+                    .collect::<Vec<_>>();
+                let mut followed_removal_ids = user_state
+                    .following
+                    .difference(&following_ids)
+                    .copied()
+                    .collect::<Vec<_>>();
+
+                follower_addition_ids.sort_unstable();
+                follower_removal_ids.sort_unstable();
+                followed_addition_ids.sort_unstable();
+                followed_removal_ids.sort_unstable();
+
+                Batch::new(
+                    Utc::now(),
+                    user_id,
+                    Some(Change::new(follower_addition_ids, follower_removal_ids)),
+                    Some(Change::new(followed_addition_ids, followed_removal_ids)),
+                )
             }
         }
     }
@@ -198,6 +227,19 @@ impl Store {
 
     pub fn user_count(&self) -> usize {
         self.state.read().unwrap().users.len()
+    }
+
+    pub fn user_ids(&self) -> Vec<u64> {
+        let mut user_ids = self
+            .state
+            .read()
+            .unwrap()
+            .users
+            .keys()
+            .copied()
+            .collect::<Vec<_>>();
+        user_ids.sort_unstable();
+        user_ids
     }
 
     pub fn followers(&self) -> Vec<(u64, Vec<u64>)> {

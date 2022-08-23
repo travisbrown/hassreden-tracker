@@ -1,4 +1,5 @@
 use egg_mode_extras::client::{Client, TokenType};
+use futures::try_join;
 use hst_cli::prelude::*;
 use hst_tw_follow::session::{RunInfo, Session};
 
@@ -18,19 +19,10 @@ async fn main() -> Result<(), Error> {
 
     match opts.command {
         Command::Run => loop {
-            match session.run(TokenType::App).await? {
-                Some(RunInfo::Archived {
-                    archived_batch_count,
-                }) => {
-                    log::info!("Archived {} batches", archived_batch_count);
-                }
-                Some(other) => {
-                    log::info!("Unknown result: {:?}", other);
-                }
-                None => {
-                    break;
-                }
-            }
+            try_join!(
+                run_loop(&session, TokenType::App),
+                run_loop(&session, TokenType::User)
+            )?;
         },
         Command::Scrape { user_token, id } => {
             let token_type = if user_token {
@@ -40,6 +32,26 @@ async fn main() -> Result<(), Error> {
             };
             let info = session.scrape(token_type, id, None).await?;
             println!("{:?}", info);
+        }
+        Command::ValidateTrackedDb => {
+            let (store_only_ids, tracked_db_only_ids) = session.compare_users()?;
+
+            println!(
+                "Only in store: {}",
+                store_only_ids
+                    .into_iter()
+                    .map(|id| id.to_string())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            );
+            println!(
+                "Only in tracked user database: {}",
+                tracked_db_only_ids
+                    .into_iter()
+                    .map(|id| id.to_string())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            );
         }
     }
 
@@ -87,4 +99,31 @@ enum Command {
         /// User ID
         id: u64,
     },
+    ValidateTrackedDb,
+}
+
+async fn run_loop(session: &Session, token_type: TokenType) -> Result<(), Error> {
+    let tag = if token_type == TokenType::App {
+        "[APPL]"
+    } else {
+        "[USER]"
+    };
+    loop {
+        match session.run(token_type).await? {
+            Some(RunInfo::Archived {
+                archived_batch_count,
+            }) => {
+                log::info!("{} Archived {} batches", tag, archived_batch_count);
+            }
+            Some(RunInfo::Scraped { batch }) => {
+                log::info!("{} Batch: {}, {}", tag, batch.user_id, batch.total_len());
+            }
+            Some(other) => {
+                log::info!("{} Other result: {:?}", tag, other);
+            }
+            None => {
+                log::info!("{} Empty result", tag);
+            }
+        }
+    }
 }

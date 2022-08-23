@@ -4,7 +4,11 @@ use crate::{
     Batch,
 };
 use chrono::{Duration, Utc};
-use egg_mode_extras::{client::TokenType, error::UnavailableReason, Client};
+use egg_mode_extras::{
+    client::{FormerUserStatus, TokenType},
+    error::UnavailableReason,
+    Client,
+};
 use futures::{future::TryFutureExt, stream::TryStreamExt};
 use hst_deactivations::file::DeactivationFile;
 use std::collections::{HashMap, HashSet};
@@ -100,7 +104,7 @@ impl Session {
                     if !user
                         .as_ref()
                         .map(|user| {
-                            user.protected || check_block(&self.twitter_client, &user, token_type)
+                            user.protected || check_block(&self.twitter_client, user, token_type)
                         })
                         .unwrap_or(false)
                     {
@@ -138,6 +142,8 @@ impl Session {
             Some(user) => Some(user),
             None => self.tracked.get(user_id)?,
         };
+
+        hst_cli::prelude::log::info!("RUNNING: {}", user_id);
 
         if let Some(last_update) = self.store.check_out(
             user_id,
@@ -178,6 +184,30 @@ impl Session {
             Ok(None)
         }
     }
+
+    pub fn compare_users(&self) -> Result<(Vec<u64>, Vec<u64>), Error> {
+        let store_ids = self.store.user_ids().into_iter().collect::<HashSet<_>>();
+        let tracked_db_ids = self
+            .tracked
+            .users()?
+            .into_iter()
+            .map(|user| user.id)
+            .collect::<HashSet<_>>();
+
+        let mut store_only_ids = store_ids
+            .difference(&tracked_db_ids)
+            .copied()
+            .collect::<Vec<_>>();
+        let mut tracked_db_only_ids = tracked_db_ids
+            .difference(&store_ids)
+            .copied()
+            .collect::<Vec<_>>();
+
+        store_only_ids.sort_unstable();
+        tracked_db_only_ids.sort_unstable();
+
+        Ok((store_only_ids, tracked_db_only_ids))
+    }
 }
 
 async fn scrape_follows(
@@ -197,7 +227,7 @@ async fn scrape_follows(
         followed_ids_lookup.map_err(Error::from)
     ) {
         Ok(pair) => Ok(Ok(pair)),
-        Err(error) => check_unavailable_reason(&client, id, &error)
+        Err(error) => check_unavailable_reason(client, id, &error)
             .await
             .map_or_else(|| Err(error), |status| Ok(Err(status))),
     }
@@ -210,16 +240,22 @@ pub async fn check_unavailable_reason(
     error: &Error,
 ) -> Option<UnavailableStatus> {
     match error {
-        Error::EggMode(error)
-            if UnavailableReason::from(error) == UnavailableReason::Unauthorized =>
-        {
-            match client.lookup_user_or_status(id, TokenType::App).await {
-                Ok(user) => Some(UnavailableStatus::Block),
-                Err(client_error) => match UnavailableReason::from(&client_error) {
-                    UnavailableReason::Suspended => Some(UnavailableStatus::Suspended),
-                    UnavailableReason::Deactivated => Some(UnavailableStatus::Deactivated),
-                    _ => None,
-                },
+        Error::EggMode(error) => {
+            let reason = UnavailableReason::from(error);
+            if reason == UnavailableReason::Unauthorized
+                || reason == UnavailableReason::DoesNotExist
+            {
+                client
+                    .lookup_user_or_status(id, TokenType::App)
+                    .await
+                    .ok()
+                    .map(|result| match result {
+                        Ok(_) => UnavailableStatus::Block,
+                        Err(FormerUserStatus::Deactivated) => UnavailableStatus::Deactivated,
+                        Err(FormerUserStatus::Suspended) => UnavailableStatus::Suspended,
+                    })
+            } else {
+                None
             }
         }
         _ => None,
