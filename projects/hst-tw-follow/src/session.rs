@@ -4,9 +4,10 @@ use crate::{
     Batch,
 };
 use chrono::{Duration, Utc};
-use egg_mode_extras::{client::TokenType, Client};
+use egg_mode_extras::{client::TokenType, error::UnavailableReason, Client};
+use futures::{future::TryFutureExt, stream::TryStreamExt};
 use hst_deactivations::file::DeactivationFile;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
 const RUN_DURATION_BUFFER_S: i64 = 20 * 60;
@@ -15,6 +16,8 @@ const RUN_DURATION_BUFFER_S: i64 = 20 * 60;
 pub enum Error {
     #[error("I/O error")]
     Io(#[from] std::io::Error),
+    #[error("Twitter API error")]
+    EggMode(#[from] egg_mode::error::Error),
     #[error("Twitter API client error")]
     EggModeExtras(#[from] egg_mode_extras::error::Error),
     #[error("Store error")]
@@ -125,6 +128,45 @@ impl Session {
     }
 }
 
+async fn scrape_follows(
+    client: &Client,
+    token_type: TokenType,
+    id: u64,
+) -> Result<(HashSet<u64>, HashSet<u64>), Error> {
+    let followers_ids = client
+        .follower_ids(id, token_type)
+        .try_collect::<HashSet<_>>();
+    let following_ids = client
+        .followed_ids(id, token_type)
+        .try_collect::<HashSet<_>>();
+
+    futures::try_join!(
+        followers_ids.map_err(Error::from),
+        following_ids.map_err(Error::from)
+    )
+}
+
+pub async fn check_unavailable_reason(
+    client: &Client,
+    id: u64,
+    error: Error,
+) -> Result<UnavailableReason, Error> {
+    match error {
+        Error::EggMode(error)
+            if UnavailableReason::from(&error) == UnavailableReason::Unauthorized =>
+        {
+            match client.lookup_user_or_status(id, TokenType::App).await {
+                Ok(user) => Ok(UnavailableReason::Unauthorized),
+                Err(client_error) => match UnavailableReason::from(&client_error) {
+                    UnavailableReason::Other => Err(Error::from(error)),
+                    other => Ok(other),
+                },
+            }
+        }
+        _ => Err(error),
+    }
+}
+
 fn check_block(client: &Client, user: &TrackedUser, token_type: TokenType) -> bool {
     token_type == TokenType::User && user.blocks.contains(&client.user_id())
 }
@@ -147,6 +189,6 @@ fn default_target_age(followers_count: usize) -> Duration {
 }
 
 fn estimate_run_duration(count: usize) -> Duration {
-    Duration::seconds((((count / 75000) + 1) * 15 * 60) as i64)
+    Duration::seconds((((count / 75_000) + 1) * 15 * 60) as i64)
         + Duration::seconds(RUN_DURATION_BUFFER_S)
 }
