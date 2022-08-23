@@ -24,9 +24,6 @@ async fn main() -> Result<(), Error> {
                 }) => {
                     log::info!("Archived {} batches", archived_batch_count);
                 }
-                Some(RunInfo::Next(id, diff)) => {
-                    log::info!("Next: {}, {}", id, diff.num_days());
-                }
                 Some(other) => {
                     log::info!("Unknown result: {:?}", other);
                 }
@@ -35,6 +32,15 @@ async fn main() -> Result<(), Error> {
                 }
             }
         },
+        Command::Scrape { user_token, id } => {
+            let token_type = if user_token {
+                TokenType::User
+            } else {
+                TokenType::App
+            };
+            let info = session.scrape(token_type, id, None).await?;
+            println!("{:?}", info);
+        }
     }
 
     Ok(())
@@ -74,4 +80,11 @@ struct Opts {
 #[derive(Debug, Parser)]
 enum Command {
     Run,
+    Scrape {
+        /// Use user token
+        #[clap(long)]
+        user_token: bool,
+        /// User ID
+        id: u64,
+    },
 }

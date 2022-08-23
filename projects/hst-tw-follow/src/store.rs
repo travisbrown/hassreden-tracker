@@ -402,6 +402,21 @@ impl Store {
         }
     }
 
+    pub fn undo_check_out(&self, user_id: u64, last_update: DateTime<Utc>) -> Result<bool, Error> {
+        let mut state = self.state.write().unwrap();
+        let user_state = state
+            .users
+            .get_mut(&user_id)
+            .ok_or(Error::UntrackedId(user_id))?;
+
+        if user_state.last_update == last_update {
+            user_state.expiration = None;
+            Ok(true)
+        } else {
+            Ok(false)
+        }
+    }
+
     pub fn make_batch(
         &self,
         user_id: u64,

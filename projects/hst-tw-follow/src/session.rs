@@ -83,7 +83,7 @@ impl Session {
             }))
         } else {
             let user_updates = self.store.user_updates();
-            let tracked_users = self
+            let mut tracked_users = self
                 .tracked
                 .users()?
                 .into_iter()
@@ -95,16 +95,18 @@ impl Session {
 
             for (id, last_update) in user_updates {
                 if self.deactivations.status(id).is_none() {
-                    let user = tracked_users.get(&id);
+                    let user = tracked_users.remove(&id);
 
                     if !user
+                        .as_ref()
                         .map(|user| {
-                            user.protected || check_block(&self.twitter_client, user, token_type)
+                            user.protected || check_block(&self.twitter_client, &user, token_type)
                         })
                         .unwrap_or(false)
                     {
                         let age = now - last_update;
                         let target_age = user
+                            .as_ref()
                             .map(|user| {
                                 user.target_age
                                     .unwrap_or_else(|| default_target_age(user.followers_count))
@@ -120,50 +122,61 @@ impl Session {
                 .into_iter()
                 .max_by_key(|(id, _, diff)| (*diff, *id))
             {
-                Some((id, user, _)) => {
-                    if let Some(last_update) = self.store.check_out(
-                        id,
-                        estimate_run_duration(
-                            user.map(|user| user.followers_count).unwrap_or(15_000),
-                        ),
-                    )? {
-                        match scrape_follows(&self.twitter_client, token_type, id).await? {
-                            Ok((follower_ids, followed_ids)) => {
-                                let batch = self.store.make_batch(id, follower_ids, followed_ids);
-                                self.store.update_and_write(&batch, last_update)?;
-
-                                Ok(Some(RunInfo::Scraped { batch }))
-                            }
-                            Err(status) => {
-                                match status {
-                                    UnavailableStatus::Block => {
-                                        self.tracked
-                                            .put_block(id, self.twitter_client.user_id())?;
-                                    }
-                                    UnavailableStatus::Deactivated => {
-                                        self.deactivations.add(id, 50, Utc::now());
-                                        self.deactivations.flush()?;
-                                    }
-                                    UnavailableStatus::Suspended => {
-                                        self.deactivations.add(id, 63, Utc::now());
-                                        self.deactivations.flush()?;
-                                    }
-                                }
-
-                                Ok(Some(RunInfo::Unavailable { id, status }))
-                            }
-                        }
-                    } else {
-                        Ok(None)
-                    }
-                }
+                Some((id, user, _)) => self.scrape(token_type, id, user).await,
                 None => Ok(None),
             }
         }
     }
 
-    pub async fn scrape(&self, token_type: TokenType, user_id: u64, ) -> Result<Option<RunInfo>, Error> {
-        let user = tracked_users.get(&id);
+    pub async fn scrape(
+        &self,
+        token_type: TokenType,
+        user_id: u64,
+        user: Option<TrackedUser>,
+    ) -> Result<Option<RunInfo>, Error> {
+        let user = match user {
+            Some(user) => Some(user),
+            None => self.tracked.get(user_id)?,
+        };
+
+        if let Some(last_update) = self.store.check_out(
+            user_id,
+            estimate_run_duration(user.map(|user| user.followers_count).unwrap_or(15_000)),
+        )? {
+            match scrape_follows(&self.twitter_client, token_type, user_id).await? {
+                Ok((follower_ids, followed_ids)) => {
+                    let batch = self.store.make_batch(user_id, follower_ids, followed_ids);
+                    self.store.update_and_write(&batch, last_update)?;
+
+                    Ok(Some(RunInfo::Scraped { batch }))
+                }
+                Err(status) => {
+                    match status {
+                        UnavailableStatus::Block => {
+                            self.tracked
+                                .put_block(user_id, self.twitter_client.user_id())?;
+                        }
+                        UnavailableStatus::Deactivated => {
+                            self.deactivations.add(user_id, 50, Utc::now());
+                            self.deactivations.flush()?;
+                        }
+                        UnavailableStatus::Suspended => {
+                            self.deactivations.add(user_id, 63, Utc::now());
+                            self.deactivations.flush()?;
+                        }
+                    }
+
+                    self.store.undo_check_out(user_id, last_update)?;
+
+                    Ok(Some(RunInfo::Unavailable {
+                        id: user_id,
+                        status,
+                    }))
+                }
+            }
+        } else {
+            Ok(None)
+        }
     }
 }
 
