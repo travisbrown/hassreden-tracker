@@ -292,16 +292,6 @@ fn parse_id_value(value: &[u8]) -> Result<Option<DateTime<Utc>>, Error> {
     }
 }
 
-fn timestamp_value(timestamp: Option<DateTime<Utc>>) -> Result<Vec<u8>, Error> {
-    match timestamp {
-        Some(timestamp) => {
-            let timestamp_s = timestamp_to_u32(Some(timestamp))?;
-            Ok(timestamp_s.to_be_bytes().to_vec())
-        }
-        None => Ok(vec![]),
-    }
-}
-
 fn parse_timestamp_value(value: &[u8]) -> Result<Option<DateTime<Utc>>, Error> {
     if value.is_empty() {
         Ok(None)
