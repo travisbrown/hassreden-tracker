@@ -22,6 +22,7 @@ hst-tw-db = { path = "../hst-tw-db" }
 integer-encoding = "3"
 rocksdb = { version = "0.19", default-features = false, features = ["zstd"] }
 rusqlite = { version = "0.28", features = ["bundled"] }
+serde_json = { version = "1", features = ["preserve_order"] }
 thiserror = "1"
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 zstd = "0.11"

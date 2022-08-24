@@ -1,6 +1,7 @@
 use super::{DeactivationLog, Entry, Error};
 use chrono::{DateTime, Utc};
 use fd_lock::RwLock as FdLock;
+use std::collections::HashMap;
 use std::fs::File;
 use std::io::Seek;
 use std::ops::DerefMut;
@@ -42,6 +43,11 @@ impl DeactivationFile {
     pub fn add(&self, user_id: u64, status: u32, observed: DateTime<Utc>) {
         let mut log = self.log.write().unwrap();
         log.add(user_id, status, observed);
+    }
+
+    pub fn add_all(&self, updates: HashMap<u64, (u32, DateTime<Utc>)>) {
+        let mut log = self.log.write().unwrap();
+        log.add_all(updates);
     }
 
     pub fn flush(&self) -> Result<(), Error> {

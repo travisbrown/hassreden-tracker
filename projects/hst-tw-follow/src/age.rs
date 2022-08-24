@@ -163,6 +163,49 @@ impl ProfileAgeDb {
 
         Ok(vec![])
     }
+
+    /// Only for debugging.
+    pub fn dump_next(
+        &self,
+        count: usize,
+    ) -> Result<
+        Vec<(
+            u64,
+            Option<DateTime<Utc>>,
+            Option<DateTime<Utc>>,
+            Option<DateTime<Utc>>,
+        )>,
+        Error,
+    > {
+        let tx = self.db.transaction();
+        let iter = tx.prefix_iterator([AGE_TAG]);
+
+        let items = iter
+            .map(|result| {
+                result.map_err(Error::from).and_then(|(key, value)| {
+                    if key[0] == AGE_TAG {
+                        let (next, id) = parse_age_key(&key)?;
+                        let (last, started) = parse_age_value(&value)?;
+
+                        Ok(Some((id, next, last, started)))
+                    } else {
+                        Ok(None)
+                    }
+                })
+            })
+            .take_while(|result| {
+                result
+                    .as_ref()
+                    .map_or_else(|_| true, |value| value.is_some())
+            })
+            .filter_map(|result| {
+                result.map_or_else(|error| Some(Err(error)), |value| value.map(Ok))
+            })
+            .take(count)
+            .collect::<Result<Vec<_>, _>>()?;
+
+        Ok(items)
+    }
 }
 
 fn age_key(snapshot: Option<DateTime<Utc>>, id: u64) -> Result<[u8; 13], Error> {

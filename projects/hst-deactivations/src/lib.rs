@@ -304,6 +304,30 @@ impl DeactivationLog {
 
         self.entries = new_log.entries;
     }
+
+    pub fn add_all(&mut self, updates: HashMap<u64, (u32, DateTime<Utc>)>) {
+        let mut update_entries = HashMap::new();
+
+        for (user_id, (status, observed)) in updates.into_iter() {
+            update_entries.insert(
+                user_id,
+                vec![Entry {
+                    status,
+                    observed,
+                    reversal: None,
+                }],
+            );
+        }
+
+        let update_log = Self {
+            entries: update_entries,
+        };
+
+        let self_log: &Self = self;
+        let new_log = self_log + &update_log;
+
+        self.entries = new_log.entries;
+    }
 }
 
 impl Add for &DeactivationLog {

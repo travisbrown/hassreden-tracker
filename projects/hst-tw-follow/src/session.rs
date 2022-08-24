@@ -69,7 +69,7 @@ pub struct Session {
     store: Store,
     tracked: TrackedUserDb,
     deactivations: DeactivationFile,
-    profile_age_db: ProfileAgeDb,
+    pub profile_age_db: ProfileAgeDb,
 }
 
 impl Session {
@@ -94,8 +94,9 @@ impl Session {
         })
     }
 
-    pub fn downloader(&self) -> super::downloader::Downloader {
+    pub fn downloader<P: AsRef<Path>>(&self, path: P) -> super::downloader::Downloader {
         super::downloader::Downloader::new(
+            path.as_ref().to_path_buf().into_boxed_path(),
             self.twitter_client.clone(),
             self.deactivations.clone(),
             self.profile_age_db.clone(),
@@ -164,6 +165,43 @@ impl Session {
         }
     }
 
+    /// Request downloads for batch.
+    fn enqueue_batch(&self, batch: &Batch) -> Result<usize, Error> {
+        let mut ids = HashSet::new();
+
+        if let Some(change) = &batch.follower_change {
+            for id in &change.addition_ids {
+                ids.insert(*id);
+            }
+
+            for id in &change.removal_ids {
+                if self.deactivations.status(*id).is_none() {
+                    ids.insert(*id);
+                }
+            }
+        }
+
+        if let Some(change) = &batch.followed_change {
+            for id in &change.addition_ids {
+                ids.insert(*id);
+            }
+
+            for id in &change.removal_ids {
+                if self.deactivations.status(*id).is_none() {
+                    ids.insert(*id);
+                }
+            }
+        }
+
+        let len = ids.len();
+
+        for id in ids {
+            self.profile_age_db.update(id, None, None)?;
+        }
+
+        Ok(len)
+    }
+
     pub async fn scrape(
         &self,
         token_type: TokenType,
@@ -190,6 +228,7 @@ impl Session {
                 Ok((follower_ids, followed_ids)) => {
                     let batch = self.store.make_batch(user_id, follower_ids, followed_ids);
                     self.store.update_and_write(&batch, last_update)?;
+                    self.enqueue_batch(&batch)?;
 
                     Ok(Some(RunInfo::Scraped { batch }))
                 }
@@ -272,6 +311,20 @@ impl Session {
         }
 
         Ok(())
+    }
+
+    /// Remove deactivated users from the profile age database.
+    pub fn clean_profiles_ages(&self) -> Result<usize, Error> {
+        let ids = self.deactivations.log().current_deactivated(None);
+        let mut count = 0;
+
+        for id in ids {
+            if self.profile_age_db.delete(id)? {
+                count += 1;
+            }
+        }
+
+        Ok(count)
     }
 }
 

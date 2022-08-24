@@ -2,7 +2,10 @@ use egg_mode_extras::client::{Client, TokenType};
 use futures::try_join;
 use hst_cli::prelude::*;
 use hst_tw_db::{table::ReadOnly, ProfileDb};
-use hst_tw_follow::session::{RunInfo, Session};
+use hst_tw_follow::{
+    downloader::Downloader,
+    session::{RunInfo, Session},
+};
 
 #[tokio::main]
 async fn main() -> Result<(), Error> {
@@ -20,12 +23,15 @@ async fn main() -> Result<(), Error> {
     )?;
 
     match opts.command {
-        Command::Run => loop {
+        Command::Run { download, batch } => {
+            let downloader = session.downloader(&download);
+
             try_join!(
                 run_loop(&session, TokenType::App),
-                run_loop(&session, TokenType::User)
+                run_loop(&session, TokenType::User),
+                download_loop(&downloader, batch)
             )?;
-        },
+        }
         Command::Scrape { user_token, id } => {
             let token_type = if user_token {
                 TokenType::User
@@ -59,6 +65,22 @@ async fn main() -> Result<(), Error> {
             let profile_db = ProfileDb::<ReadOnly>::open(profiles, false)?;
             session.reload_profile_ages(&profile_db)?;
         }
+        Command::DumpDownloaderQueue { count } => {
+            let items = session
+                .profile_age_db
+                .dump_next(count)
+                .map_err(hst_tw_follow::session::Error::from)?;
+
+            for (id, next, last, started) in items {
+                println!(
+                    "{},{},{},{}",
+                    id,
+                    next.map(|value| value.to_string()).unwrap_or_default(),
+                    last.map(|value| value.to_string()).unwrap_or_default(),
+                    started.map(|value| value.to_string()).unwrap_or_default(),
+                );
+            }
+        }
     }
 
     Ok(())
@@ -72,6 +94,8 @@ pub enum Error {
     Session(#[from] hst_tw_follow::session::Error),
     #[error("ProfileDb error")]
     ProfileDb(#[from] hst_tw_db::Error),
+    #[error("Downloader error")]
+    Downloader(#[from] hst_tw_follow::downloader::Error),
     #[error("Log initialization error")]
     LogInitialization(#[from] log::SetLoggerError),
 }
@@ -102,7 +126,14 @@ struct Opts {
 
 #[derive(Debug, Parser)]
 enum Command {
-    Run,
+    Run {
+        /// Downloader base directory path
+        #[clap(long, default_value = "profiles")]
+        download: String,
+        /// Downloader batch size
+        #[clap(long, default_value = "20000")]
+        batch: usize,
+    },
     Scrape {
         /// Use user token
         #[clap(long)]
@@ -115,6 +146,10 @@ enum Command {
         /// Profile database path
         #[clap(short, long)]
         profiles: String,
+    },
+    DumpDownloaderQueue {
+        #[clap(long, default_value = "100")]
+        count: usize,
     },
 }
 
@@ -141,5 +176,11 @@ async fn run_loop(session: &Session, token_type: TokenType) -> Result<(), Error>
                 log::info!("{} Empty result", tag);
             }
         }
+    }
+}
+
+async fn download_loop(downloader: &Downloader, count: usize) -> Result<(), Error> {
+    loop {
+        downloader.run_batch(count).await?;
     }
 }
