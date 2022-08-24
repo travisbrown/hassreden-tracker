@@ -18,6 +18,8 @@ pub enum Error {
     Db(#[from] rocksdb::Error),
     #[error("Invalid key bytes")]
     InvalidKeyBytes(Vec<u8>),
+    #[error("Invalid value bytes")]
+    InvalidValueBytes(Vec<u8>),
     #[error("Invalid timestamp bytes")]
     InvalidTimestampBytes(Vec<u8>),
     #[error("Invalid timestamp")]
@@ -51,28 +53,58 @@ impl ProfileAgeDb {
         })
     }
 
-    pub fn update(&self, id: u64, snapshot: Option<DateTime<Utc>>) -> Result<(), Error> {
+    pub fn update(
+        &self,
+        id: u64,
+        last: Option<DateTime<Utc>>,
+        next: Option<DateTime<Utc>>,
+    ) -> Result<(), Error> {
         let tx = self.db.transaction();
         let id_key = id_key(id);
 
         match tx.get_pinned_for_update(id_key, true)? {
             Some(value) => {
-                let current_snapshot = parse_timestamp_value(&value)?;
-                tx.delete(age_key(current_snapshot, id)?)?;
-                tx.put(age_key(snapshot, id)?, [])?;
-                tx.put(id_key, timestamp_value(snapshot)?)?;
+                let current_next = parse_id_value(&value)?;
+                tx.delete(age_key(current_next, id)?)?;
+                tx.put(age_key(next, id)?, age_value(last, None)?)?;
+                tx.put(id_key, id_value(next)?)?;
             }
             None => {
                 // We haven't seen this ID, so we automatically promote it to urgent status.
-                tx.put(age_key(None, id)?, [])?;
-                tx.put(id_key, timestamp_value(None)?)?;
+                tx.put(age_key(None, id)?, age_value(last, None)?)?;
+                tx.put(id_key, id_value(None)?)?;
             }
         };
 
         Ok(tx.commit()?)
     }
 
-    pub fn get_next(&self, count: usize, min_age: Duration) -> Result<Vec<u64>, Error> {
+    /// The account has been deactivated or suspended.
+    pub fn delete(&self, id: u64) -> Result<bool, Error> {
+        let tx = self.db.transaction();
+        let id_key = id_key(id);
+
+        let removed = match tx.get_pinned_for_update(id_key, true)? {
+            Some(value) => {
+                let current_next = parse_id_value(&value)?;
+                tx.delete(age_key(current_next, id)?)?;
+                tx.delete(id_key)?;
+                true
+            }
+            None => false,
+        };
+
+        tx.commit()?;
+
+        Ok(removed)
+    }
+
+    pub fn get_next(
+        &self,
+        count: usize,
+        min_age: Duration,
+        min_running: Duration,
+    ) -> Result<Vec<u64>, Error> {
         let tx = self.db.transaction();
         let iter = tx.prefix_iterator([AGE_TAG]);
         let now = Utc::now();
@@ -82,9 +114,14 @@ impl ProfileAgeDb {
                 result.map_err(Error::from).and_then(|(key, value)| {
                     if key[0] == AGE_TAG {
                         let (_, id) = parse_age_key(&key)?;
-                        let started = parse_timestamp_value(&value)?;
+                        let (last, started) = parse_age_value(&value)?;
 
-                        Ok(Some((key, id, started)))
+                        // The last snapshot is too new.
+                        if last.filter(|last| now - *last < min_age).is_some() {
+                            Ok(None)
+                        } else {
+                            Ok(Some((key, id, started)))
+                        }
                     } else {
                         Ok(None)
                     }
@@ -101,7 +138,7 @@ impl ProfileAgeDb {
                     |value| {
                         value.and_then(|(key, id, started)| match started {
                             Some(started) => {
-                                if now - started > min_age {
+                                if now - started >= min_running {
                                     Some(Ok((key, id)))
                                 } else {
                                     None
@@ -159,6 +196,38 @@ fn parse_age_key(key: &[u8]) -> Result<(Option<DateTime<Utc>>, u64), Error> {
     }
 }
 
+fn age_value(
+    last: Option<DateTime<Utc>>,
+    started: Option<DateTime<Utc>>,
+) -> Result<Vec<u8>, Error> {
+    let mut value = Vec::with_capacity(8);
+
+    let last_s = timestamp_to_u32(last)?;
+    value.extend_from_slice(&last_s.to_be_bytes());
+
+    if started.is_some() {
+        let started_s = timestamp_to_u32(started)?;
+        value.extend_from_slice(&started_s.to_be_bytes());
+    }
+
+    Ok(value)
+}
+
+fn parse_age_value(value: &[u8]) -> Result<(Option<DateTime<Utc>>, Option<DateTime<Utc>>), Error> {
+    match value.len() {
+        4 => {
+            let last = parse_timestamp_value(&value)?;
+            Ok((last, None))
+        }
+        8 => {
+            let last = parse_timestamp_value(&value[0..4])?;
+            let started = parse_timestamp_value(&value[4..8])?;
+            Ok((last, started))
+        }
+        _ => Err(Error::InvalidValueBytes(value.to_vec())),
+    }
+}
+
 fn id_key(id: u64) -> [u8; 9] {
     let mut key = [0; 9];
     key[0] = ID_TAG;
@@ -166,17 +235,16 @@ fn id_key(id: u64) -> [u8; 9] {
     key
 }
 
-fn parse_timestamp_value(value: &[u8]) -> Result<Option<DateTime<Utc>>, Error> {
-    if value.is_empty() {
-        Ok(None)
-    } else {
-        let timestamp_s = u32::from_be_bytes(
-            value
-                .try_into()
-                .map_err(|_| Error::InvalidKeyBytes(value.to_vec()))?,
-        );
+fn id_value(next: Option<DateTime<Utc>>) -> Result<[u8; 4], Error> {
+    Ok(timestamp_to_u32(next)?.to_be_bytes())
+}
 
-        Ok(timestamp_from_u32(timestamp_s))
+fn parse_id_value(value: &[u8]) -> Result<Option<DateTime<Utc>>, Error> {
+    if value.len() == 4 {
+        let next = parse_timestamp_value(&value[0..4])?;
+        Ok(next)
+    } else {
+        Err(Error::InvalidValueBytes(value.to_vec()))
     }
 }
 
@@ -190,22 +258,36 @@ fn timestamp_value(timestamp: Option<DateTime<Utc>>) -> Result<Vec<u8>, Error> {
     }
 }
 
+fn parse_timestamp_value(value: &[u8]) -> Result<Option<DateTime<Utc>>, Error> {
+    if value.is_empty() {
+        Ok(None)
+    } else {
+        let timestamp_s = u32::from_be_bytes(
+            value
+                .try_into()
+                .map_err(|_| Error::InvalidValueBytes(value.to_vec()))?,
+        );
+
+        Ok(timestamp_from_u32(timestamp_s))
+    }
+}
+
 fn timestamp_to_u32(timestamp: Option<DateTime<Utc>>) -> Result<u32, Error> {
     let timestamp_s = match timestamp {
         Some(timestamp) => timestamp
             .timestamp()
             .try_into()
             .map_err(|_| Error::InvalidTimestamp(timestamp))?,
-        None => u32::MAX,
+        None => 0,
     };
 
-    Ok(u32::MAX - timestamp_s)
+    Ok(timestamp_s)
 }
 
 fn timestamp_from_u32(value: u32) -> Option<DateTime<Utc>> {
     if value == 0 {
         None
     } else {
-        Some(Utc.timestamp((u32::MAX - value) as i64, 0))
+        Some(Utc.timestamp(value as i64, 0))
     }
 }
