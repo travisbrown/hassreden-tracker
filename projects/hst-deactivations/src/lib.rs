@@ -37,7 +37,7 @@ pub struct Entry {
     pub reversal: Option<DateTime<Utc>>,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct DeactivationLog {
     entries: HashMap<u64, Vec<Entry>>,
 }

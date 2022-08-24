@@ -1,6 +1,7 @@
 use hst_cli::prelude::*;
 use hst_tw_db::{table::ReadOnly, ProfileDb};
 use hst_tw_follow::dbs::tracked::TrackedUserDb;
+use std::collections::HashSet;
 use std::io::BufRead;
 
 fn main() -> Result<(), Error> {
@@ -53,6 +54,17 @@ fn main() -> Result<(), Error> {
 
             let profile_db = ProfileDb::<ReadOnly>::open(profiles, false)?;
             let missing_ids = db.update_all(&profile_db, Some(ids))?;
+
+            for missing_id in missing_ids {
+                log::warn!("No profile for {}", missing_id);
+            }
+        }
+        Command::Add { profiles, id } => {
+            let profile_db = ProfileDb::<ReadOnly>::open(profiles, false)?;
+            let missing_ids = db.update_all(
+                &profile_db,
+                Some(vec![id].into_iter().collect::<HashSet<_>>()),
+            )?;
 
             for missing_id in missing_ids {
                 log::warn!("No profile for {}", missing_id);
@@ -112,6 +124,13 @@ enum Command {
         /// Profile database path
         #[clap(short, long)]
         profiles: String,
+    },
+    Add {
+        /// Profile database path
+        #[clap(short, long)]
+        profiles: String,
+        /// User ID
+        id: u64,
     },
     Export,
 }

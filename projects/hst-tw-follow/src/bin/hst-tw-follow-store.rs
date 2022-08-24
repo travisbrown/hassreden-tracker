@@ -1,6 +1,9 @@
+use chrono::{TimeZone, Utc};
 use hst_cli::prelude::*;
+use hst_deactivations::DeactivationLog;
 use hst_tw_follow::formats::{archive::write_batches, legacy, transform::deduplicate_removals};
 use hst_tw_follow::{store::Store, Batch};
+use std::collections::HashSet;
 use std::fs::File;
 use std::io::BufWriter;
 
@@ -49,6 +52,53 @@ fn main() -> Result<(), Error> {
                 );
             }
         }
+        Command::IdsSince {
+            deactivations,
+            timestamp,
+        } => {
+            let mut ids = HashSet::new();
+            let beginning = Utc.timestamp(timestamp, 0);
+            let log = match deactivations {
+                Some(path) => DeactivationLog::read(File::open(path)?)?,
+                None => DeactivationLog::default(),
+            };
+
+            for result in store.past_batches() {
+                let (_, batch) = result?;
+                if batch.timestamp >= beginning {
+                    for id in batch.addition_ids() {
+                        ids.insert(id);
+                    }
+
+                    for id in batch.removal_ids() {
+                        if log.status(id).is_none() {
+                            ids.insert(id);
+                        }
+                    }
+                }
+            }
+
+            for batch in store.current_batches()? {
+                if batch.timestamp >= beginning {
+                    for id in batch.addition_ids() {
+                        ids.insert(id);
+                    }
+
+                    for id in batch.removal_ids() {
+                        if log.status(id).is_none() {
+                            ids.insert(id);
+                        }
+                    }
+                }
+            }
+
+            let mut ids = ids.into_iter().collect::<Vec<_>>();
+            ids.sort_unstable();
+
+            for id in ids {
+                println!("{}", id);
+            }
+        }
         Command::ConvertLegacy { input, output } => {
             let batches = deduplicate_removals(legacy::read_batches(input));
             let mut writer = BufWriter::new(File::create(output)?);
@@ -67,6 +117,8 @@ pub enum Error {
     Store(#[from] hst_tw_follow::store::Error),
     #[error("Legacy format error")]
     Legacy(#[from] hst_tw_follow::formats::legacy::Error),
+    #[error("Deactivation file error")]
+    Deactivations(#[from] hst_deactivations::Error),
     #[error("Log initialization error")]
     LogInitialization(#[from] log::SetLoggerError),
 }
@@ -88,6 +140,13 @@ enum Command {
     Validate,
     BatchInfo,
     Dump,
+    IdsSince {
+        /// Deactivations file path
+        #[clap(long)]
+        deactivations: Option<String>,
+        /// Epoch second
+        timestamp: i64,
+    },
     ConvertLegacy {
         /// Input data directory path
         #[clap(long)]

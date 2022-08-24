@@ -128,6 +128,7 @@ impl State {
     fn update_and_write(&mut self, batch: &Batch, last_update: DateTime<Utc>) -> Result<(), Error> {
         self.update(batch, Some(last_update))?;
         self.write(batch)?;
+        self.writer.flush()?;
         Ok(())
     }
 
@@ -395,21 +396,20 @@ impl Store {
         }
     }
 
-    /// Returns an unordered list of un-checked-out users and their last update time.
-    pub fn user_updates(&self) -> Vec<(u64, DateTime<Utc>)> {
+    /// Returns an unordered list of users, their last update time, and check-out status.
+    pub fn user_updates(&self) -> Vec<(u64, DateTime<Utc>, bool)> {
         let now = Utc::now();
 
         let state = self.state.read().unwrap();
         let mut user_ages = Vec::with_capacity(state.users.len());
 
         for (&id, user_state) in &state.users {
-            if user_state
+            let available = user_state
                 .expiration
                 .filter(|&expiration| expiration > now)
-                .is_none()
-            {
-                user_ages.push((id, user_state.last_update));
-            }
+                .is_none();
+
+            user_ages.push((id, user_state.last_update, available));
         }
 
         user_ages
@@ -417,8 +417,6 @@ impl Store {
 
     /// Declares an intention to scrape this account, reserving it for an amount of time estimated
     /// from the given approximate follower and following count.
-    ///
-    /// Result will be empty if the account is already reserved.
     pub fn check_out(
         &self,
         user_id: u64,
@@ -429,8 +427,8 @@ impl Store {
         let mut state = self.state.write().unwrap();
         let user_state = state
             .users
-            .get_mut(&user_id)
-            .ok_or(Error::UntrackedId(user_id))?;
+            .entry(user_id)
+            .or_insert_with(|| UserState::new(DateTime::<Utc>::MIN_UTC));
 
         if user_state
             .expiration

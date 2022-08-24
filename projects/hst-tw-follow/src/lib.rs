@@ -1,4 +1,5 @@
 use chrono::{DateTime, Utc};
+use std::collections::HashSet;
 
 pub mod age;
 pub mod dbs;
@@ -46,6 +47,42 @@ impl Batch {
             follower_change,
             followed_change,
         }
+    }
+
+    pub fn addition_ids(&self) -> HashSet<u64> {
+        let mut ids = HashSet::new();
+
+        if let Some(change) = &self.follower_change {
+            for &id in &change.addition_ids {
+                ids.insert(id);
+            }
+        }
+
+        if let Some(change) = &self.followed_change {
+            for &id in &change.addition_ids {
+                ids.insert(id);
+            }
+        }
+
+        ids
+    }
+
+    pub fn removal_ids(&self) -> HashSet<u64> {
+        let mut ids = HashSet::new();
+
+        if let Some(change) = &self.follower_change {
+            for &id in &change.removal_ids {
+                ids.insert(id);
+            }
+        }
+
+        if let Some(change) = &self.followed_change {
+            for &id in &change.removal_ids {
+                ids.insert(id);
+            }
+        }
+
+        ids
     }
 
     pub fn total_len(&self) -> usize {

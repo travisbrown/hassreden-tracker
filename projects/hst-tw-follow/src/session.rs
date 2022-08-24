@@ -11,10 +11,14 @@ use egg_mode_extras::{
 };
 use futures::{future::TryFutureExt, stream::TryStreamExt};
 use hst_deactivations::file::DeactivationFile;
+use std::cmp::Reverse;
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
 const RUN_DURATION_BUFFER_S: i64 = 20 * 60;
+
+/// This is supposed to be 15 minutes but in practice seems longer.
+const RATE_LIMIT_WINDOW_S: i64 = 24 * 60;
 
 #[derive(thiserror::Error, Debug)]
 pub enum Error {
@@ -94,11 +98,21 @@ impl Session {
                 .map(|user| (user.id, user))
                 .collect::<HashMap<_, _>>();
 
+            let mut new_users = tracked_users.clone();
+
+            for (id, _, _) in &user_updates {
+                new_users.remove(id);
+            }
+
             let mut candidates = vec![];
             let now = Utc::now();
 
-            for (id, last_update) in user_updates {
-                if self.deactivations.status(id).is_none() {
+            for (id, user) in new_users {
+                candidates.push((id, Some(user), Duration::max_value()));
+            }
+
+            for (id, last_update, available) in user_updates {
+                if available && self.deactivations.status(id).is_none() {
                     let user = tracked_users.remove(&id);
 
                     if !user
@@ -124,7 +138,7 @@ impl Session {
 
             match candidates
                 .into_iter()
-                .max_by_key(|(id, _, diff)| (*diff, *id))
+                .max_by_key(|(id, _, diff)| (*diff, Reverse(*id)))
             {
                 Some((id, user, _)) => self.scrape(token_type, id, user).await,
                 None => Ok(None),
@@ -143,7 +157,12 @@ impl Session {
             None => self.tracked.get(user_id)?,
         };
 
-        hst_cli::prelude::log::info!("RUNNING: {}", user_id);
+        let tag = if token_type == TokenType::App {
+            "[APPL]"
+        } else {
+            "[USER]"
+        };
+        hst_cli::prelude::log::info!("{} RUNNING: {}", tag, user_id);
 
         if let Some(last_update) = self.store.check_out(
             user_id,
@@ -284,6 +303,6 @@ fn default_target_age(followers_count: usize) -> Duration {
 }
 
 fn estimate_run_duration(count: usize) -> Duration {
-    Duration::seconds((((count / 75_000) + 1) * 15 * 60) as i64)
+    Duration::seconds(((count / 75_000) + 1) as i64 * RATE_LIMIT_WINDOW_S)
         + Duration::seconds(RUN_DURATION_BUFFER_S)
 }
