@@ -3,7 +3,7 @@ use chrono::{DateTime, Utc};
 use fd_lock::RwLock as FdLock;
 use std::collections::HashMap;
 use std::fs::File;
-use std::io::Seek;
+use std::io::{Seek, Write};
 use std::ops::DerefMut;
 use std::path::Path;
 use std::sync::{Arc, Mutex, RwLock};
@@ -58,6 +58,7 @@ impl DeactivationFile {
         file.set_len(0)?;
         file.rewind()?;
         log.write(file.deref_mut())?;
+        file.flush()?;
 
         Ok(())
     }

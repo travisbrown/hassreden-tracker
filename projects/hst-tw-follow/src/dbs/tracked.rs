@@ -138,7 +138,7 @@ impl TrackedUserDb {
         let connection = self.connection.read().unwrap();
         let mut update = connection.prepare_cached(USER_UPDATE_PROTECTED)?;
 
-        update.execute(params![SQLiteId(id), protected])?;
+        update.execute(params![protected, SQLiteId(id)])?;
 
         Ok(())
     }

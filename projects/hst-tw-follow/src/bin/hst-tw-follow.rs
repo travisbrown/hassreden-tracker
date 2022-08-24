@@ -65,6 +65,9 @@ async fn main() -> Result<(), Error> {
             let profile_db = ProfileDb::<ReadOnly>::open(profiles, false)?;
             session.reload_profile_ages(&profile_db)?;
         }
+        Command::CleanAges => {
+            session.clean_profile_ages()?;
+        }
         Command::DumpDownloaderQueue { count } => {
             let items = session
                 .profile_age_db
@@ -118,7 +121,7 @@ struct Opts {
     #[clap(long, default_value = "deactivations.csv")]
     deactivations: String,
     /// Profile age database path
-    #[clap(long, default_value = "profile_ages")]
+    #[clap(long, default_value = "profile-ages-db/")]
     ages: String,
     #[clap(subcommand)]
     command: Command,
@@ -147,6 +150,7 @@ enum Command {
         #[clap(short, long)]
         profiles: String,
     },
+    CleanAges,
     DumpDownloaderQueue {
         #[clap(long, default_value = "100")]
         count: usize,

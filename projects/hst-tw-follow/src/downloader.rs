@@ -56,12 +56,14 @@ impl Downloader {
         }
     }
 
-    pub async fn run_batch(&self, count: usize) -> Result<(), Error> {
+    pub async fn run_batch(&self, count: usize) -> Result<(usize, usize), Error> {
         let ids = self.profile_age_db.get_next(
             count,
             Duration::seconds(MIN_AGE_S),
             Duration::seconds(MIN_RUNNING_S),
         )?;
+
+        hst_cli::prelude::log::info!("Downloading {} (of {})", ids.len(), count);
 
         let results = self
             .twitter_client
@@ -92,20 +94,27 @@ impl Downloader {
             }
         }
 
-        self.deactivations.add_all(deactivations);
-        self.deactivations.flush()?;
+        let deactivations_len = deactivations.len();
+        let profiles_len = profiles.len();
+
+        if deactivations_len > 0 {
+            self.deactivations.add_all(deactivations);
+            self.deactivations.flush()?;
+        }
 
         profiles.sort_by_key(|(timestamp, id, _)| (*timestamp, *id));
 
-        let timestamp_ms = Utc::now().timestamp_millis();
-        let file = File::create(self.base.join(format!("{}.ndjson", timestamp_ms)))?;
-        let mut writer = BufWriter::new(file);
+        if profiles_len > 0 {
+            let timestamp_ms = Utc::now().timestamp_millis();
+            let file = File::create(self.base.join(format!("{}.ndjson", timestamp_ms)))?;
+            let mut writer = BufWriter::new(file);
 
-        for (_, _, profile) in profiles {
-            write!(writer, "{}", profile)?;
+            for (_, _, profile) in profiles {
+                writeln!(writer, "{}", profile)?;
+            }
         }
 
-        Ok(())
+        Ok((deactivations_len, profiles_len))
     }
 }
 

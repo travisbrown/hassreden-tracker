@@ -22,7 +22,7 @@ const RUN_DURATION_BUFFER_S: i64 = 20 * 60;
 const MIN_FOLLOWERS_COUNT: usize = 15_000;
 const MAX_FOLLOWERS_COUNT: usize = 1_000_000;
 const MIN_TARGET_AGE_H: i64 = 48;
-const MAX_TARGET_AGE_D: i64 = 60;
+const MAX_TARGET_AGE_D: i64 = 28;
 
 /// This is supposed to be 15 minutes but in practice seems longer.
 const RATE_LIMIT_WINDOW_S: i64 = 24 * 60;
@@ -53,6 +53,7 @@ pub enum UnavailableStatus {
     Block,
     Deactivated,
     Suspended,
+    Protected,
 }
 
 #[derive(Debug)]
@@ -252,6 +253,9 @@ impl Session {
                             self.deactivations.add(user_id, 63, Utc::now());
                             self.deactivations.flush()?;
                         }
+                        UnavailableStatus::Protected => {
+                            self.tracked.set_protected(user_id, true)?;
+                        }
                     }
 
                     self.store.undo_check_out(user_id, last_update)?;
@@ -298,16 +302,19 @@ impl Session {
         for result in profile_db.iter() {
             let (id, profiles) = result?;
             let rank = ranks.remove(&id).unwrap_or(10_000_000);
-            let target_age = profile_target_age(rank);
 
-            if let Some((last, _)) = profiles.first() {
-                self.profile_age_db
-                    .update(id, Some(*last), Some(*last + target_age))?;
+            if self.deactivations.status(id).is_none() {
+                let target_age = profile_target_age(rank);
 
-                count += 1;
+                if let Some((last, _)) = profiles.first() {
+                    self.profile_age_db
+                        .update(id, Some(*last), Some(*last + target_age))?;
 
-                if count % 100000 == 0 {
-                    println!("{}", count);
+                    count += 1;
+
+                    if count % 100000 == 0 {
+                        println!("{}", count);
+                    }
                 }
             }
         }
@@ -320,7 +327,7 @@ impl Session {
     }
 
     /// Remove deactivated users from the profile age database.
-    pub fn clean_profiles_ages(&self) -> Result<usize, Error> {
+    pub fn clean_profile_ages(&self) -> Result<usize, Error> {
         let ids = self.deactivations.log().current_deactivated(None);
         let mut count = 0;
 
@@ -374,6 +381,7 @@ pub async fn check_unavailable_reason(
                     .await
                     .ok()
                     .map(|result| match result {
+                        Ok(profile) if profile.protected => UnavailableStatus::Protected,
                         Ok(_) => UnavailableStatus::Block,
                         Err(FormerUserStatus::Deactivated) => UnavailableStatus::Deactivated,
                         Err(FormerUserStatus::Suspended) => UnavailableStatus::Suspended,
@@ -394,7 +402,7 @@ fn default_target_age(followers_count: usize) -> Duration {
     let min_count = MIN_FOLLOWERS_COUNT;
     let max_count = MAX_FOLLOWERS_COUNT;
     let count_range = max_count - min_count;
-    let min_target_age = Duration::days(MIN_TARGET_AGE_H);
+    let min_target_age = Duration::hours(MIN_TARGET_AGE_H);
     let max_target_age = Duration::days(MAX_TARGET_AGE_D);
     let unit = (max_target_age - min_target_age) / count_range as i32;
 

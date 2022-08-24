@@ -70,9 +70,8 @@ impl ProfileAgeDb {
                 tx.put(id_key, id_value(next)?)?;
             }
             None => {
-                // We haven't seen this ID, so we automatically promote it to urgent status.
-                tx.put(age_key(None, id)?, age_value(last, None)?)?;
-                tx.put(id_key, id_value(None)?)?;
+                tx.put(age_key(next, id)?, age_value(last, None)?)?;
+                tx.put(id_key, id_value(next)?)?;
             }
         };
 
@@ -120,7 +119,7 @@ impl ProfileAgeDb {
                         if last.filter(|last| now - *last < min_age).is_some() {
                             Ok(None)
                         } else {
-                            Ok(Some((key, id, started)))
+                            Ok(Some((key, id, last, started)))
                         }
                     } else {
                         Ok(None)
@@ -136,16 +135,16 @@ impl ProfileAgeDb {
                 result.map_or_else(
                     |error| Some(Err(error)),
                     |value| {
-                        value.and_then(|(key, id, started)| match started {
+                        value.and_then(|(key, id, last, started)| match started {
                             Some(started) => {
                                 // The currently run is too new
                                 if now - started < min_running {
                                     None
                                 } else {
-                                    Some(Ok((key, id)))
+                                    Some(Ok((key, id, last)))
                                 }
                             }
-                            None => Some(Ok((key, id))),
+                            None => Some(Ok((key, id, last))),
                         })
                     },
                 )
@@ -153,15 +152,17 @@ impl ProfileAgeDb {
             .take(count)
             .collect::<Result<Vec<_>, _>>()?;
 
-        let value = timestamp_to_u32(Some(now))?;
+        let now = Utc::now();
+        let mut ids = Vec::with_capacity(pairs.len());
 
-        for (key, _) in pairs {
-            tx.put(key, value.to_be_bytes())?;
+        for (age_key, id, last) in pairs {
+            tx.put(age_key, age_value(last, Some(now))?)?;
+            ids.push(id);
         }
 
         tx.commit()?;
 
-        Ok(vec![])
+        Ok(ids)
     }
 
     /// Only for debugging.
