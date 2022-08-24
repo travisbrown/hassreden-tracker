@@ -6,9 +6,8 @@ use crate::{
 };
 use chrono::{Duration, Utc};
 use egg_mode_extras::{
-    client::{FormerUserStatus, TokenType},
+    client::{Client, FormerUserStatus, TokenType},
     error::UnavailableReason,
-    Client,
 };
 use futures::{future::TryFutureExt, stream::TryStreamExt};
 use hst_deactivations::file::DeactivationFile;
@@ -16,6 +15,7 @@ use hst_tw_db::{table::ReadOnly, ProfileDb};
 use std::cmp::Reverse;
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
+use std::sync::Arc;
 
 const RUN_DURATION_BUFFER_S: i64 = 20 * 60;
 
@@ -65,7 +65,7 @@ pub enum RunInfo {
 }
 
 pub struct Session {
-    twitter_client: Client,
+    twitter_client: Arc<Client>,
     store: Store,
     tracked: TrackedUserDb,
     deactivations: DeactivationFile,
@@ -86,12 +86,20 @@ impl Session {
         let profile_age_db = ProfileAgeDb::open(profile_age_db_path, false)?;
 
         Ok(Self {
-            twitter_client,
+            twitter_client: Arc::new(twitter_client),
             store,
             tracked,
             deactivations,
             profile_age_db,
         })
+    }
+
+    pub fn downloader(&self) -> super::downloader::Downloader {
+        super::downloader::Downloader::new(
+            self.twitter_client.clone(),
+            self.deactivations.clone(),
+            self.profile_age_db.clone(),
+        )
     }
 
     pub async fn run(&self, token_type: TokenType) -> Result<Option<RunInfo>, Error> {

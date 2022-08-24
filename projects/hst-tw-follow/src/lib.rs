@@ -3,6 +3,7 @@ use std::collections::HashSet;
 
 pub mod age;
 pub mod dbs;
+pub mod downloader;
 pub mod formats;
 pub mod session;
 pub mod store;

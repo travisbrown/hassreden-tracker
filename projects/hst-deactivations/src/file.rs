@@ -1,22 +1,25 @@
 use super::{DeactivationLog, Entry, Error};
 use chrono::{DateTime, Utc};
+use fd_lock::RwLock as FdLock;
 use std::fs::File;
+use std::io::Seek;
+use std::ops::DerefMut;
 use std::path::Path;
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc, Mutex, RwLock};
 
 #[derive(Clone, Debug)]
 pub struct DeactivationFile {
-    path: Box<Path>,
+    file: Arc<Mutex<FdLock<File>>>,
     log: Arc<RwLock<DeactivationLog>>,
 }
 
 impl DeactivationFile {
     pub fn open<P: AsRef<Path>>(path: P) -> Result<Self, Error> {
-        let file = File::open(&path)?;
-        let log = DeactivationLog::read(file)?;
+        let file = File::options().read(true).write(true).open(&path)?;
+        let log = DeactivationLog::read(&file)?;
 
         Ok(Self {
-            path: path.as_ref().to_path_buf().into_boxed_path(),
+            file: Arc::new(Mutex::new(FdLock::new(file))),
             log: Arc::new(RwLock::new(log)),
         })
     }
@@ -42,9 +45,14 @@ impl DeactivationFile {
     }
 
     pub fn flush(&self) -> Result<(), Error> {
-        let log = self.log.write().unwrap();
-        let file = File::create(&self.path)?;
+        let log = self.log.read().unwrap();
+        let mut mutex = self.file.lock().unwrap();
+        let mut file = mutex.write()?;
 
-        Ok(log.write(file)?)
+        file.set_len(0)?;
+        file.rewind()?;
+        log.write(file.deref_mut())?;
+
+        Ok(())
     }
 }
