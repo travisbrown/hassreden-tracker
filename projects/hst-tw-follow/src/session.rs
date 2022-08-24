@@ -1,4 +1,5 @@
 use crate::{
+    age::ProfileAgeDb,
     dbs::tracked::{TrackedUser, TrackedUserDb},
     store::Store,
     Batch,
@@ -11,6 +12,7 @@ use egg_mode_extras::{
 };
 use futures::{future::TryFutureExt, stream::TryStreamExt};
 use hst_deactivations::file::DeactivationFile;
+use hst_tw_db::{table::ReadOnly, ProfileDb};
 use std::cmp::Reverse;
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
@@ -34,6 +36,10 @@ pub enum Error {
     TrackedUserDb(#[from] crate::dbs::tracked::Error),
     #[error("Deactivations file error")]
     Deactivations(#[from] hst_deactivations::Error),
+    #[error("Profile database error")]
+    ProfileDb(#[from] hst_tw_db::Error),
+    #[error("Profile age database error")]
+    ProfileAgeDb(#[from] crate::age::Error),
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -63,6 +69,7 @@ pub struct Session {
     store: Store,
     tracked: TrackedUserDb,
     deactivations: DeactivationFile,
+    profile_age_db: ProfileAgeDb,
 }
 
 impl Session {
@@ -71,16 +78,19 @@ impl Session {
         store_path: P,
         tracked_path: P,
         deactivations_path: P,
+        profile_age_db_path: P,
     ) -> Result<Self, Error> {
         let store = Store::open(store_path)?;
         let tracked = TrackedUserDb::open(tracked_path)?;
         let deactivations = DeactivationFile::open(deactivations_path)?;
+        let profile_age_db = ProfileAgeDb::open(profile_age_db_path, false)?;
 
         Ok(Self {
             twitter_client,
             store,
             tracked,
             deactivations,
+            profile_age_db,
         })
     }
 
@@ -227,6 +237,34 @@ impl Session {
 
         Ok((store_only_ids, tracked_db_only_ids))
     }
+
+    pub fn reload_profile_ages(&self, profile_db: &ProfileDb<ReadOnly>) -> Result<(), Error> {
+        let mut ranks = self.store.user_ranks()?;
+        let mut count = 0;
+
+        for result in profile_db.iter() {
+            let (id, profiles) = result?;
+            let rank = ranks.remove(&id).unwrap_or(10_000_000);
+            let target_age = profile_target_age(rank);
+
+            if let Some((last, _)) = profiles.first() {
+                self.profile_age_db
+                    .update(id, Some(*last), Some(*last + target_age))?;
+
+                count += 1;
+
+                if count % 100000 == 0 {
+                    println!("{}", count);
+                }
+            }
+        }
+
+        for (id, _) in ranks {
+            self.profile_age_db.update(id, None, None)?;
+        }
+
+        Ok(())
+    }
 }
 
 async fn scrape_follows(
@@ -305,4 +343,16 @@ fn default_target_age(followers_count: usize) -> Duration {
 fn estimate_run_duration(count: usize) -> Duration {
     Duration::seconds(((count / 75_000) + 1) as i64 * RATE_LIMIT_WINDOW_S)
         + Duration::seconds(RUN_DURATION_BUFFER_S)
+}
+
+fn profile_target_age(rank: usize) -> Duration {
+    if rank <= 100_000 {
+        Duration::hours(6)
+    } else if rank <= 1_000_000 {
+        Duration::days(1)
+    } else if rank <= 10_000_000 {
+        Duration::days(7)
+    } else {
+        Duration::days(30)
+    }
 }

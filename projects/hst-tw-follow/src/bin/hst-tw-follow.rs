@@ -1,6 +1,7 @@
 use egg_mode_extras::client::{Client, TokenType};
 use futures::try_join;
 use hst_cli::prelude::*;
+use hst_tw_db::{table::ReadOnly, ProfileDb};
 use hst_tw_follow::session::{RunInfo, Session};
 
 #[tokio::main]
@@ -15,6 +16,7 @@ async fn main() -> Result<(), Error> {
         opts.store,
         opts.tracked,
         opts.deactivations,
+        opts.ages,
     )?;
 
     match opts.command {
@@ -53,6 +55,10 @@ async fn main() -> Result<(), Error> {
                     .join(", ")
             );
         }
+        Command::ReloadAges { profiles } => {
+            let profile_db = ProfileDb::<ReadOnly>::open(profiles, false)?;
+            session.reload_profile_ages(&profile_db)?;
+        }
     }
 
     Ok(())
@@ -64,6 +70,8 @@ pub enum Error {
     Io(#[from] std::io::Error),
     #[error("Session error")]
     Session(#[from] hst_tw_follow::session::Error),
+    #[error("ProfileDb error")]
+    ProfileDb(#[from] hst_tw_db::Error),
     #[error("Log initialization error")]
     LogInitialization(#[from] log::SetLoggerError),
 }
@@ -85,6 +93,9 @@ struct Opts {
     /// Deactivation log file path
     #[clap(long, default_value = "deactivations.csv")]
     deactivations: String,
+    /// Profile age database path
+    #[clap(long, default_value = "profile_ages")]
+    ages: String,
     #[clap(subcommand)]
     command: Command,
 }
@@ -100,6 +111,11 @@ enum Command {
         id: u64,
     },
     ValidateTrackedDb,
+    ReloadAges {
+        /// Profile database path
+        #[clap(short, long)]
+        profiles: String,
+    },
 }
 
 async fn run_loop(session: &Session, token_type: TokenType) -> Result<(), Error> {

@@ -3,6 +3,7 @@ use super::{
     Batch, Change,
 };
 use chrono::{DateTime, Duration, NaiveDate, Utc};
+use std::cmp::Reverse;
 use std::collections::{HashMap, HashSet};
 use std::fs::{File, OpenOptions};
 use std::io::{BufReader, BufWriter, Write};
@@ -503,6 +504,63 @@ impl Store {
         }
 
         Ok(())
+    }
+
+    pub fn user_scores(&self) -> Result<HashMap<u64, usize>, Error> {
+        let mut follower_pairs = HashSet::new();
+        let mut followed_pairs = HashSet::new();
+
+        for result in self.past_batches() {
+            let (_, batch) = result?;
+
+            if let Some(change) = batch.follower_change {
+                for id in change.addition_ids {
+                    follower_pairs.insert((id, batch.user_id));
+                }
+            }
+
+            if let Some(change) = batch.followed_change {
+                for id in change.addition_ids {
+                    followed_pairs.insert((id, batch.user_id));
+                }
+            }
+        }
+
+        for batch in self.current_batches()? {
+            if let Some(change) = batch.follower_change {
+                for id in change.addition_ids {
+                    follower_pairs.insert((id, batch.user_id));
+                }
+            }
+
+            if let Some(change) = batch.followed_change {
+                for id in change.addition_ids {
+                    followed_pairs.insert((id, batch.user_id));
+                }
+            }
+        }
+
+        let mut scores = HashMap::new();
+
+        for (id, _) in follower_pairs {
+            *scores.entry(id).or_default() += 1;
+        }
+
+        for (id, _) in followed_pairs {
+            *scores.entry(id).or_default() += 1;
+        }
+
+        Ok(scores)
+    }
+
+    pub fn user_ranks(&self) -> Result<HashMap<u64, usize>, Error> {
+        let mut scores = self.user_scores()?.into_iter().collect::<Vec<_>>();
+        scores.sort_by_key(|(id, score)| (Reverse(*score), *id));
+        Ok(scores
+            .into_iter()
+            .enumerate()
+            .map(|(index, (id, _))| (id, index + 1))
+            .collect())
     }
 }
 

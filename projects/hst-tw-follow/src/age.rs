@@ -138,10 +138,11 @@ impl ProfileAgeDb {
                     |value| {
                         value.and_then(|(key, id, started)| match started {
                             Some(started) => {
-                                if now - started >= min_running {
-                                    Some(Ok((key, id)))
-                                } else {
+                                // The currently run is too new
+                                if now - started < min_running {
                                     None
+                                } else {
+                                    Some(Ok((key, id)))
                                 }
                             }
                             None => Some(Ok((key, id))),
@@ -216,7 +217,7 @@ fn age_value(
 fn parse_age_value(value: &[u8]) -> Result<(Option<DateTime<Utc>>, Option<DateTime<Utc>>), Error> {
     match value.len() {
         4 => {
-            let last = parse_timestamp_value(&value)?;
+            let last = parse_timestamp_value(value)?;
             Ok((last, None))
         }
         8 => {

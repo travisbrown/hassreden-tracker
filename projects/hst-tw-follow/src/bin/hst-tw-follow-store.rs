@@ -3,6 +3,7 @@ use hst_cli::prelude::*;
 use hst_deactivations::DeactivationLog;
 use hst_tw_follow::formats::{archive::write_batches, legacy, transform::deduplicate_removals};
 use hst_tw_follow::{store::Store, Batch};
+use std::cmp::Reverse;
 use std::collections::HashSet;
 use std::fs::File;
 use std::io::BufWriter;
@@ -99,6 +100,14 @@ fn main() -> Result<(), Error> {
                 println!("{}", id);
             }
         }
+        Command::Scores => {
+            let mut scores = store.user_scores()?.into_iter().collect::<Vec<_>>();
+            scores.sort_by_key(|(id, score)| (Reverse(*score), *id));
+
+            for (id, score) in scores {
+                println!("{},{}", id, score);
+            }
+        }
         Command::ConvertLegacy { input, output } => {
             let batches = deduplicate_removals(legacy::read_batches(input));
             let mut writer = BufWriter::new(File::create(output)?);
@@ -147,6 +156,7 @@ enum Command {
         /// Epoch second
         timestamp: i64,
     },
+    Scores,
     ConvertLegacy {
         /// Input data directory path
         #[clap(long)]
