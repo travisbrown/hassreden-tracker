@@ -19,8 +19,14 @@ use std::sync::Arc;
 
 const RUN_DURATION_BUFFER_S: i64 = 20 * 60;
 
+const MIN_FOLLOWERS_COUNT: usize = 15_000;
+const MAX_FOLLOWERS_COUNT: usize = 1_000_000;
+const MIN_TARGET_AGE_H: i64 = 48;
+const MAX_TARGET_AGE_D: i64 = 60;
+
 /// This is supposed to be 15 minutes but in practice seems longer.
 const RATE_LIMIT_WINDOW_S: i64 = 24 * 60;
+const RATE_LIMIT_WINDOW_BATCH_SIZE: usize = 75_000;
 
 #[derive(thiserror::Error, Debug)]
 pub enum Error {
@@ -385,11 +391,11 @@ fn check_block(client: &Client, user: &TrackedUser, token_type: TokenType) -> bo
 }
 
 fn default_target_age(followers_count: usize) -> Duration {
-    let min_count = 15_000;
-    let max_count = 1_000_000;
+    let min_count = MIN_FOLLOWERS_COUNT;
+    let max_count = MAX_FOLLOWERS_COUNT;
     let count_range = max_count - min_count;
-    let min_target_age = Duration::days(2);
-    let max_target_age = Duration::days(30);
+    let min_target_age = Duration::days(MIN_TARGET_AGE_H);
+    let max_target_age = Duration::days(MAX_TARGET_AGE_D);
     let unit = (max_target_age - min_target_age) / count_range as i32;
 
     if followers_count >= max_count {
@@ -402,7 +408,7 @@ fn default_target_age(followers_count: usize) -> Duration {
 }
 
 fn estimate_run_duration(count: usize) -> Duration {
-    Duration::seconds(((count / 75_000) + 1) as i64 * RATE_LIMIT_WINDOW_S)
+    Duration::seconds(((count / RATE_LIMIT_WINDOW_BATCH_SIZE) + 1) as i64 * RATE_LIMIT_WINDOW_S)
         + Duration::seconds(RUN_DURATION_BUFFER_S)
 }
 
