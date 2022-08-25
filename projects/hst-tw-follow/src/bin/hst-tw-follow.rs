@@ -66,7 +66,9 @@ async fn main() -> Result<(), Error> {
             session.reload_profile_ages(&profile_db)?;
         }
         Command::CleanAges => {
-            session.clean_profile_ages()?;
+            let count = session.clean_profile_ages()?;
+
+            log::info!("Removed {} users from the queue", count);
         }
         Command::DumpDownloaderQueue { count } => {
             let items = session
