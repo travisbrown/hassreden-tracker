@@ -180,12 +180,7 @@ impl ProfileAgeDb {
                         let (_, id) = parse_age_key(&key)?;
                         let (last, started) = parse_age_value(&value)?;
 
-                        // The last snapshot is too new.
-                        if last.filter(|last| now - *last < min_age).is_some() {
-                            Ok(None)
-                        } else {
-                            Ok(Some((key, id, last, started)))
-                        }
+                        Ok(Some((key, id, last, started)))
                     } else {
                         Ok(None)
                     }
@@ -199,19 +194,19 @@ impl ProfileAgeDb {
             .filter_map(|result| {
                 result.map_or_else(
                     |error| Some(Err(error)),
-                    |value| {
-                        value.and_then(|(key, id, last, started)| match started {
-                            Some(started) => {
-                                // The currently run is too new
-                                if now - started < min_running {
-                                    None
-                                } else {
-                                    Some(Ok((key, id, last)))
-                                }
+                    |value|
+                        value.and_then(|(key, id, last, started)|
+                            // Ignore old last snapshots.
+                            if last.filter(|last| now - *last < min_age).is_some() {
+                                // The last snapshot is too new.
+                                None
+                            } else if started.filter(|started| now - *started < min_running).is_some() {
+                                // The current run is too new.
+                                None
+                            } else {
+                                Some(Ok((key, id, last)))
                             }
-                            None => Some(Ok((key, id, last))),
-                        })
-                    },
+                        )
                 )
             })
             .take(count)
