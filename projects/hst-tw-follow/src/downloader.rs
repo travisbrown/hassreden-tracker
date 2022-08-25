@@ -5,7 +5,7 @@ use egg_mode_extras::client::{Client, TokenType};
 use futures::stream::TryStreamExt;
 use hst_deactivations::file::DeactivationFile;
 use serde_json::Value;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs::File;
 use std::io::{BufWriter, Write};
 use std::path::Path;
@@ -39,6 +39,7 @@ pub struct Downloader {
     twitter_client: Arc<Client>,
     deactivations: DeactivationFile,
     profile_age_db: ProfileAgeDb,
+    default_target_age: Duration,
 }
 
 impl Downloader {
@@ -47,12 +48,14 @@ impl Downloader {
         twitter_client: Arc<Client>,
         deactivations: DeactivationFile,
         profile_age_db: ProfileAgeDb,
+        default_target_age: Duration,
     ) -> Self {
         Self {
             base,
             twitter_client,
             deactivations,
             profile_age_db,
+            default_target_age,
         }
     }
 
@@ -74,6 +77,7 @@ impl Downloader {
 
         let mut profiles = Vec::with_capacity(count);
         let mut deactivations = HashMap::new();
+        let mut ids = HashSet::new();
 
         for result in results {
             let now = Utc::now();
@@ -83,15 +87,21 @@ impl Downloader {
                     let id = extract_user_id(&value)?;
 
                     profiles.push((now, id, value));
+                    ids.insert(id);
                 }
                 Err((UserID::ID(user_id), status)) => {
                     let status_code = status.code() as u32;
                     deactivations.insert(user_id, (status_code, now));
+                    ids.insert(user_id);
                 }
                 Err((user_id, _)) => {
                     return Err(Error::UnexpectedUserId(user_id));
                 }
             }
+        }
+
+        for id in ids {
+            self.profile_age_db.finish(id, self.default_target_age)?;
         }
 
         let deactivations_len = deactivations.len();

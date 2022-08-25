@@ -24,6 +24,8 @@ pub enum Error {
     InvalidTimestampBytes(Vec<u8>),
     #[error("Invalid timestamp")]
     InvalidTimestamp(DateTime<Utc>),
+    #[error("Invalid duration")]
+    InvalidDuration(Duration),
     #[error("Unexpected tag")]
     UnexpectedTag(u8),
 }
@@ -53,29 +55,92 @@ impl ProfileAgeDb {
         })
     }
 
-    pub fn update(
+    pub fn insert(
         &self,
         id: u64,
         last: Option<DateTime<Utc>>,
-        next: Option<DateTime<Utc>>,
-    ) -> Result<(), Error> {
+        target_age: Duration,
+    ) -> Result<bool, Error> {
+        let tx = self.db.transaction();
+        let id_key = id_key(id);
+        let next = last.map(|last| last + target_age);
+
+        let replaced = match tx.get_pinned_for_update(id_key, true)? {
+            Some(value) => {
+                let (current_next, _) = parse_id_value(&value)?;
+                tx.delete(age_key(current_next, id)?)?;
+                true
+            }
+            None => false,
+        };
+
+        tx.put(age_key(next, id)?, age_value(last, None)?)?;
+        tx.put(id_key, id_value(next, target_age)?)?;
+        tx.commit()?;
+
+        Ok(replaced)
+    }
+
+    pub fn prioritize(&self, id: u64, default_target_age: Duration) -> Result<bool, Error> {
         let tx = self.db.transaction();
         let id_key = id_key(id);
 
-        match tx.get_pinned_for_update(id_key, true)? {
+        let replaced = match tx.get_pinned_for_update(id_key, true)? {
             Some(value) => {
-                let current_next = parse_id_value(&value)?;
-                tx.delete(age_key(current_next, id)?)?;
-                tx.put(age_key(next, id)?, age_value(last, None)?)?;
-                tx.put(id_key, id_value(next)?)?;
+                let (current_next, target_age) = parse_id_value(&value)?;
+                let current_age_key = age_key(current_next, id)?;
+                let last = match tx.get_pinned_for_update(current_age_key, true)? {
+                    Some(age_value) => {
+                        let (last, _) = parse_age_value(&age_value)?;
+                        last
+                    }
+                    None => None,
+                };
+                tx.delete(current_age_key)?;
+                tx.put(age_key(None, id)?, age_value(last, None)?)?;
+                tx.put(id_key, id_value(None, target_age)?)?;
+                true
             }
             None => {
-                tx.put(age_key(next, id)?, age_value(last, None)?)?;
-                tx.put(id_key, id_value(next)?)?;
+                tx.put(age_key(None, id)?, age_value(None, None)?)?;
+                tx.put(id_key, id_value(None, default_target_age)?)?;
+                false
             }
         };
 
-        Ok(tx.commit()?)
+        tx.commit()?;
+
+        Ok(replaced)
+    }
+
+    pub fn finish(&self, id: u64, default_target_age: Duration) -> Result<bool, Error> {
+        let tx = self.db.transaction();
+        let id_key = id_key(id);
+        let now = Utc::now();
+
+        let replaced = match tx.get_pinned_for_update(id_key, true)? {
+            Some(value) => {
+                let (current_next, target_age) = parse_id_value(&value)?;
+                tx.delete(age_key(current_next, id)?)?;
+
+                let new_next = now + target_age;
+
+                tx.put(age_key(Some(new_next), id)?, age_value(Some(now), None)?)?;
+                tx.put(id_key, id_value(Some(new_next), target_age)?)?;
+                true
+            }
+            None => {
+                let new_next = now + default_target_age;
+
+                tx.put(age_key(Some(new_next), id)?, age_value(Some(now), None)?)?;
+                tx.put(id_key, id_value(Some(new_next), default_target_age)?)?;
+                false
+            }
+        };
+
+        tx.commit()?;
+
+        Ok(replaced)
     }
 
     /// The account has been deactivated or suspended.
@@ -85,7 +150,7 @@ impl ProfileAgeDb {
 
         let removed = match tx.get_pinned_for_update(id_key, true)? {
             Some(value) => {
-                let current_next = parse_id_value(&value)?;
+                let (current_next, _) = parse_id_value(&value)?;
                 tx.delete(age_key(current_next, id)?)?;
                 tx.delete(id_key)?;
                 true
@@ -209,13 +274,13 @@ impl ProfileAgeDb {
     }
 }
 
-fn age_key(snapshot: Option<DateTime<Utc>>, id: u64) -> Result<[u8; 13], Error> {
+fn age_key(next: Option<DateTime<Utc>>, id: u64) -> Result<[u8; 13], Error> {
     let mut key = [0; 13];
     key[0] = AGE_TAG;
 
-    let snapshot_s: u32 = timestamp_to_u32(snapshot)?;
+    let next_s: u32 = timestamp_to_u32(next)?;
 
-    key[1..5].copy_from_slice(&snapshot_s.to_be_bytes());
+    key[1..5].copy_from_slice(&next_s.to_be_bytes());
     key[5..13].copy_from_slice(&id.to_be_bytes());
 
     Ok(key)
@@ -225,7 +290,7 @@ fn parse_age_key(key: &[u8]) -> Result<(Option<DateTime<Utc>>, u64), Error> {
     if key[0] != AGE_TAG {
         Err(Error::UnexpectedTag(key[0]))
     } else {
-        let snapshot_s = u32::from_be_bytes(
+        let next_s = u32::from_be_bytes(
             key[1..5]
                 .try_into()
                 .map_err(|_| Error::InvalidKeyBytes(key.to_vec()))?,
@@ -237,7 +302,7 @@ fn parse_age_key(key: &[u8]) -> Result<(Option<DateTime<Utc>>, u64), Error> {
                 .map_err(|_| Error::InvalidKeyBytes(key.to_vec()))?,
         );
 
-        Ok((timestamp_from_u32(snapshot_s), id))
+        Ok((timestamp_from_u32(next_s), id))
     }
 }
 
@@ -280,14 +345,25 @@ fn id_key(id: u64) -> [u8; 9] {
     key
 }
 
-fn id_value(next: Option<DateTime<Utc>>) -> Result<[u8; 4], Error> {
-    Ok(timestamp_to_u32(next)?.to_be_bytes())
+fn id_value(next: Option<DateTime<Utc>>, target_age: Duration) -> Result<[u8; 8], Error> {
+    let mut value = [0; 8];
+    let target_age_s =
+        u32::try_from(target_age.num_seconds()).map_err(|_| Error::InvalidDuration(target_age))?;
+
+    value[0..4].copy_from_slice(&timestamp_to_u32(next)?.to_be_bytes());
+    value[4..8].copy_from_slice(&target_age_s.to_be_bytes());
+    Ok(value)
 }
 
-fn parse_id_value(value: &[u8]) -> Result<Option<DateTime<Utc>>, Error> {
-    if value.len() == 4 {
+fn parse_id_value(value: &[u8]) -> Result<(Option<DateTime<Utc>>, Duration), Error> {
+    if value.len() == 8 {
         let next = parse_timestamp_value(&value[0..4])?;
-        Ok(next)
+        let target_age_s = u32::from_be_bytes(
+            value[4..8]
+                .try_into()
+                .map_err(|_| Error::InvalidValueBytes(value.to_vec()))?,
+        );
+        Ok((next, Duration::seconds(target_age_s as i64)))
     } else {
         Err(Error::InvalidValueBytes(value.to_vec()))
     }

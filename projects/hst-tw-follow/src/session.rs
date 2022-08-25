@@ -107,6 +107,7 @@ impl Session {
             self.twitter_client.clone(),
             self.deactivations.clone(),
             self.profile_age_db.clone(),
+            default_profile_target_age(),
         )
     }
 
@@ -203,7 +204,8 @@ impl Session {
         let len = ids.len();
 
         for id in ids {
-            self.profile_age_db.update(id, None, None)?;
+            self.profile_age_db
+                .prioritize(id, default_profile_target_age())?;
         }
 
         Ok(len)
@@ -299,28 +301,27 @@ impl Session {
         let mut ranks = self.store.user_ranks()?;
         let mut count = 0;
 
-        for result in profile_db.iter() {
-            let (id, profiles) = result?;
+        for result in profile_db.user_id_iter() {
+            let (id, _, last) = result?;
             let rank = ranks.remove(&id).unwrap_or(10_000_000);
 
             if self.deactivations.status(id).is_none() {
                 let target_age = profile_target_age(rank);
 
-                if let Some((last, _)) = profiles.first() {
-                    self.profile_age_db
-                        .update(id, Some(*last), Some(*last + target_age))?;
+                self.profile_age_db.insert(id, Some(last), target_age)?;
 
-                    count += 1;
+                count += 1;
 
-                    if count % 100000 == 0 {
-                        println!("{}", count);
-                    }
+                if count % 100000 == 0 {
+                    println!("{}", count);
                 }
             }
         }
 
-        for (id, _) in ranks {
-            self.profile_age_db.update(id, None, None)?;
+        for (id, rank) in ranks {
+            let target_age = profile_target_age(rank);
+
+            self.profile_age_db.insert(id, None, target_age)?;
         }
 
         Ok(())
@@ -418,6 +419,10 @@ fn default_target_age(followers_count: usize) -> Duration {
 fn estimate_run_duration(count: usize) -> Duration {
     Duration::seconds(((count / RATE_LIMIT_WINDOW_BATCH_SIZE) + 1) as i64 * RATE_LIMIT_WINDOW_S)
         + Duration::seconds(RUN_DURATION_BUFFER_S)
+}
+
+fn default_profile_target_age() -> Duration {
+    Duration::days(7)
 }
 
 fn profile_target_age(rank: usize) -> Duration {

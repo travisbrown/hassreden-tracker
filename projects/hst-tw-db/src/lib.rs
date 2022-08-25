@@ -126,6 +126,14 @@ impl<M> ProfileDb<M> {
         }
     }
 
+    pub fn latest_iter(
+        &self,
+    ) -> impl Iterator<Item = Result<(u64, DateTime<Utc>, User), Error>> + '_ {
+        LatestProfileIterator {
+            underlying: self.db.iterator(IteratorMode::Start).peekable(),
+        }
+    }
+
     pub fn raw_iter(&self) -> impl Iterator<Item = Result<(u64, DateTime<Utc>, User), Error>> + '_ {
         self.db.iterator(IteratorMode::Start).map(|result| {
             result.map_err(Error::from).and_then(|(key, value)| {
@@ -259,6 +267,40 @@ impl<I: Iterator<Item = Result<(u64, DateTime<Utc>, User), Error>>> Iterator
                 }
 
                 (current_user_id, users)
+            })
+        })
+    }
+}
+
+pub struct LatestProfileIterator<'a> {
+    underlying: Peekable<DBIterator<'a>>,
+}
+
+impl Iterator for LatestProfileIterator<'_> {
+    type Item = Result<(u64, DateTime<Utc>, User), Error>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.underlying.next().map(|result| {
+            result.map_err(Error::from).and_then(|(key, value)| {
+                let (user_id, snapshot) = key_to_pair(&key)?;
+                let user = parse_value(value)?;
+
+                while self
+                    .underlying
+                    .next_if(|result| {
+                        result
+                            .as_ref()
+                            .map(|(key, _)| {
+                                user_id_from_key(key)
+                                    .map(|next_user_id| next_user_id == user_id)
+                                    .unwrap_or(false)
+                            })
+                            .unwrap_or(false)
+                    })
+                    .is_some()
+                {}
+
+                Ok((user_id, snapshot, user))
             })
         })
     }
