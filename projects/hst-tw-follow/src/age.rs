@@ -176,17 +176,18 @@ impl ProfileAgeDb {
                 let (next, _) = parse_age_key(&key)?;
                 let (_, started) = parse_age_value(&value)?;
 
-                if started.is_none() {
-                    match next {
-                        Some(next) => {
+                match next {
+                    Some(next) => {
+                        past_prioritized = true;
+
+                        if started.is_none() {
                             first_next = next;
-                            past_prioritized = true;
                             break;
                         }
-                        None => {
-                            if !past_prioritized {
-                                prioritized_count += 1;
-                            }
+                    }
+                    None => {
+                        if started.is_none() && !past_prioritized {
+                            prioritized_count += 1;
                         }
                     }
                 }
