@@ -7,6 +7,8 @@ use hst_tw_follow::{
     session::{RunInfo, Session},
 };
 
+const ERROR_WAIT_S: u64 = 10 * 60;
+
 #[tokio::main]
 async fn main() -> Result<(), Error> {
     let opts: Opts = Opts::parse();
@@ -166,20 +168,26 @@ async fn run_loop(session: &Session, token_type: TokenType) -> Result<(), Error>
         "[USER]"
     };
     loop {
-        match session.run(token_type).await? {
-            Some(RunInfo::Archived {
-                archived_batch_count,
-            }) => {
-                log::info!("{} Archived {} batches", tag, archived_batch_count);
-            }
-            Some(RunInfo::Scraped { batch }) => {
-                log::info!("{} Batch: {}, {}", tag, batch.user_id, batch.total_len());
-            }
-            Some(other) => {
-                log::info!("{} Other result: {:?}", tag, other);
-            }
-            None => {
-                log::info!("{} Empty result", tag);
+        match session.run(token_type).await {
+            Ok(info) => match info {
+                Some(RunInfo::Archived {
+                    archived_batch_count,
+                }) => {
+                    log::info!("{} Archived {} batches", tag, archived_batch_count);
+                }
+                Some(RunInfo::Scraped { batch }) => {
+                    log::info!("{} Batch: {}, {}", tag, batch.user_id, batch.total_len());
+                }
+                Some(other) => {
+                    log::info!("{} Other result: {:?}", tag, other);
+                }
+                None => {
+                    log::info!("{} Empty result", tag);
+                }
+            },
+            Err(error) => {
+                log::error!("{:?}", error);
+                tokio::time::sleep(tokio::time::Duration::from_secs(ERROR_WAIT_S)).await;
             }
         }
     }
@@ -187,6 +195,22 @@ async fn run_loop(session: &Session, token_type: TokenType) -> Result<(), Error>
 
 async fn download_loop(downloader: &Downloader, count: usize) -> Result<(), Error> {
     loop {
-        downloader.run_batch(count).await?;
+        match downloader.run_batch(count).await {
+            Ok((deactivated_count, profile_count)) => {
+                log::info!(
+                    "Downloaded: {} profiles, {} deactivated",
+                    profile_count,
+                    deactivated_count
+                );
+
+                if deactivated_count == 0 && profile_count == 0 {
+                    tokio::time::sleep(tokio::time::Duration::from_secs(ERROR_WAIT_S)).await;
+                }
+            }
+            Err(error) => {
+                log::error!("{:?}", error);
+                tokio::time::sleep(tokio::time::Duration::from_secs(ERROR_WAIT_S)).await;
+            }
+        }
     }
 }
