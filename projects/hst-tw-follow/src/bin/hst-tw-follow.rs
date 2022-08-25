@@ -118,16 +118,16 @@ struct Opts {
     #[clap(long, default_value = "keys.toml")]
     keys: String,
     /// Follow data directory path
-    #[clap(long, default_value = "follow-data/")]
+    #[clap(long, default_value = "data/follows/")]
     store: String,
     /// Tracked user database file path
-    #[clap(long, default_value = "tracked.db")]
+    #[clap(long, default_value = "data/tracked.db")]
     tracked: String,
     /// Deactivation log file path
-    #[clap(long, default_value = "deactivations.csv")]
+    #[clap(long, default_value = "data/deactivations.csv")]
     deactivations: String,
     /// Profile age database path
-    #[clap(long, default_value = "profile-ages-db/")]
+    #[clap(long, default_value = "data/profile-ages-db/")]
     ages: String,
     #[clap(subcommand)]
     command: Command,
@@ -137,7 +137,7 @@ struct Opts {
 enum Command {
     Run {
         /// Downloader base directory path
-        #[clap(long, default_value = "profiles")]
+        #[clap(long, default_value = "data/profiles")]
         download: String,
         /// Downloader batch size
         #[clap(long, default_value = "20000")]
