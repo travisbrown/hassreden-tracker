@@ -1,3 +1,4 @@
+use chrono::Utc;
 use egg_mode_extras::client::{Client, TokenType};
 use futures::try_join;
 use hst_cli::prelude::*;
@@ -31,6 +32,7 @@ async fn main() -> Result<(), Error> {
             try_join!(
                 run_loop(&session, TokenType::App),
                 run_loop(&session, TokenType::User),
+                download_loop(&downloader, batch),
                 download_loop(&downloader, batch)
             )?;
         }
@@ -187,7 +189,9 @@ async fn run_loop(session: &Session, token_type: TokenType) -> Result<(), Error>
             },
             Err(error) => {
                 log::error!("{:?}", error);
-                tokio::time::sleep(tokio::time::Duration::from_secs(ERROR_WAIT_S)).await;
+                if !wait_for_window_follow(&error).await {
+                    tokio::time::sleep(tokio::time::Duration::from_secs(ERROR_WAIT_S)).await;
+                }
             }
         }
     }
@@ -195,12 +199,30 @@ async fn run_loop(session: &Session, token_type: TokenType) -> Result<(), Error>
 
 async fn download_loop(downloader: &Downloader, count: usize) -> Result<(), Error> {
     loop {
-        match downloader.run_batch(count).await {
-            Ok((deactivated_count, profile_count)) => {
+        match downloader
+            .run_batch(count)
+            .await
+            .and_then(|(deactivated_count, profile_count)| {
+                downloader
+                    .profile_age_db
+                    .queue_status()
+                    .map_err(|error| error.into())
+                    .map(|(prioritized_count, first_next)| {
+                        (
+                            deactivated_count,
+                            profile_count,
+                            prioritized_count,
+                            first_next,
+                        )
+                    })
+            }) {
+            Ok((deactivated_count, profile_count, prioritized_count, first_next)) => {
                 log::info!(
-                    "Downloaded: {} profiles, {} deactivated",
+                    "Download: {} profiles, {} deactivated; queue: {} prioritized, scheduled: {}",
                     profile_count,
-                    deactivated_count
+                    deactivated_count,
+                    prioritized_count,
+                    first_next
                 );
 
                 if deactivated_count == 0 && profile_count == 0 {
@@ -209,8 +231,46 @@ async fn download_loop(downloader: &Downloader, count: usize) -> Result<(), Erro
             }
             Err(error) => {
                 log::error!("{:?}", error);
-                tokio::time::sleep(tokio::time::Duration::from_secs(ERROR_WAIT_S)).await;
+                if !wait_for_window_downloader(&error).await {
+                    tokio::time::sleep(tokio::time::Duration::from_secs(ERROR_WAIT_S)).await;
+                }
             }
         }
+    }
+}
+
+const WAIT_BUFFER_S: u64 = 30;
+
+async fn wait_for_window_follow(error: &hst_tw_follow::session::Error) -> bool {
+    match error {
+        hst_tw_follow::session::Error::EggMode(egg_mode::error::Error::RateLimit(timestamp_s)) => {
+            let now_s = Utc::now().timestamp() as u64;
+            let diff_s = *timestamp_s as u64 - now_s + WAIT_BUFFER_S;
+
+            if diff_s > 0 {
+                tokio::time::sleep(tokio::time::Duration::from_secs(diff_s)).await;
+            }
+
+            true
+        }
+        _ => false,
+    }
+}
+
+async fn wait_for_window_downloader(error: &hst_tw_follow::downloader::Error) -> bool {
+    match error {
+        hst_tw_follow::downloader::Error::EggMode(egg_mode::error::Error::RateLimit(
+            timestamp_s,
+        )) => {
+            let now_s = Utc::now().timestamp() as u64;
+            let diff_s = *timestamp_s as u64 - now_s + WAIT_BUFFER_S;
+
+            if diff_s > 0 {
+                tokio::time::sleep(tokio::time::Duration::from_secs(diff_s)).await;
+            }
+
+            true
+        }
+        _ => false,
     }
 }

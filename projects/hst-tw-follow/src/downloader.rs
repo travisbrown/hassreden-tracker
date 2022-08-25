@@ -38,7 +38,7 @@ pub struct Downloader {
     base: Box<Path>,
     twitter_client: Arc<Client>,
     deactivations: DeactivationFile,
-    profile_age_db: ProfileAgeDb,
+    pub profile_age_db: ProfileAgeDb,
     default_target_age: Duration,
 }
 
@@ -65,8 +65,6 @@ impl Downloader {
             Duration::seconds(MIN_AGE_S),
             Duration::seconds(MIN_RUNNING_S),
         )?;
-
-        hst_cli::prelude::log::info!("Downloading {} (of {})", ids.len(), count);
 
         let results = self
             .twitter_client
