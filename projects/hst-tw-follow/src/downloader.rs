@@ -59,7 +59,11 @@ impl Downloader {
         }
     }
 
-    pub async fn run_batch(&self, count: usize) -> Result<(usize, usize), Error> {
+    pub async fn run_batch(
+        &self,
+        count: usize,
+        token_type: TokenType,
+    ) -> Result<(usize, usize), Error> {
         let ids = self.profile_age_db.get_next(
             count,
             Duration::seconds(MIN_AGE_S),
@@ -68,7 +72,7 @@ impl Downloader {
 
         let results = self
             .twitter_client
-            .lookup_users_json_or_status(ids.into_iter(), TokenType::User)
+            .lookup_users_json_or_status(ids.into_iter(), token_type)
             .map_err(Error::from)
             .try_collect::<Vec<_>>()
             .await?;

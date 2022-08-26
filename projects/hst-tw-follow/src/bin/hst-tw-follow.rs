@@ -32,8 +32,8 @@ async fn main() -> Result<(), Error> {
             try_join!(
                 run_loop(&session, TokenType::App),
                 run_loop(&session, TokenType::User),
-                download_loop(&downloader, batch),
-                download_loop(&downloader, batch)
+                download_loop(&downloader, batch, TokenType::App),
+                download_loop(&downloader, batch, TokenType::User)
             )?;
         }
         Command::Scrape { user_token, id } => {
@@ -197,12 +197,14 @@ async fn run_loop(session: &Session, token_type: TokenType) -> Result<(), Error>
     }
 }
 
-async fn download_loop(downloader: &Downloader, count: usize) -> Result<(), Error> {
+async fn download_loop(
+    downloader: &Downloader,
+    count: usize,
+    token_type: TokenType,
+) -> Result<(), Error> {
     loop {
-        match downloader
-            .run_batch(count)
-            .await
-            .and_then(|(deactivated_count, profile_count)| {
+        match downloader.run_batch(count, token_type).await.and_then(
+            |(deactivated_count, profile_count)| {
                 downloader
                     .profile_age_db
                     .queue_status()
@@ -215,7 +217,8 @@ async fn download_loop(downloader: &Downloader, count: usize) -> Result<(), Erro
                             first_next,
                         )
                     })
-            }) {
+            },
+        ) {
             Ok((deactivated_count, profile_count, prioritized_count, first_next)) => {
                 log::info!(
                     "Download: {} profiles, {} deactivated; queue: {} prioritized, scheduled: {}",
