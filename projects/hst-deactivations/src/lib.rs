@@ -12,6 +12,7 @@
 //!   was reversed.
 
 use chrono::{DateTime, TimeZone, Utc};
+use std::cmp::Reverse;
 use std::collections::{HashMap, HashSet};
 use std::io::{BufRead, BufReader, BufWriter, Read, Write};
 use std::ops::Add;
@@ -339,8 +340,9 @@ impl Add for &DeactivationLog {
         for (user_id, entries) in &other.entries {
             let new_entries = new_entry_map.entry(*user_id).or_default();
             new_entries.extend(entries.clone());
-            new_entries.sort_by_key(|entry| entry.observed);
-            new_entries.dedup();
+            // We want non-empty reversals to come first.
+            new_entries.sort_by_key(|entry| (entry.observed, Reverse(entry.reversal)));
+            new_entries.dedup_by_key(|entry| (entry.observed, entry.status));
 
             let len = new_entries.len();
             if len >= 2 {
