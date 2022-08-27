@@ -1,4 +1,4 @@
-use chrono::Utc;
+use chrono::{Duration, Utc};
 use egg_mode_extras::client::{Client, TokenType};
 use futures::try_join;
 use hst_cli::prelude::*;
@@ -9,6 +9,7 @@ use hst_tw_follow::{
 };
 
 const ERROR_WAIT_S: u64 = 10 * 60;
+const MIN_AGE_S: i64 = 6 * 60 * 60;
 
 #[tokio::main]
 async fn main() -> Result<(), Error> {
@@ -207,7 +208,7 @@ async fn download_loop(
             |(deactivated_count, profile_count)| {
                 downloader
                     .profile_age_db
-                    .queue_status()
+                    .queue_status(Duration::seconds(MIN_AGE_S))
                     .map_err(|error| error.into())
                     .map(|(prioritized_count, first_next)| {
                         (

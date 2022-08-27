@@ -19,8 +19,10 @@ hst-cli = { path = "../hst-cli" }
 hst-tw-db = { path = "../hst-tw-db" }
 hst-tw-images = { path = "../hst-tw-images" }
 hst-tw-profiles = { path = "../hst-tw-profiles" }
+itertools = "0.10"
 reqwest = { version = "0.11", features = ["gzip", "json"] }
 serde_json = { version = "1", features = ["preserve_order"] }
+tempfile = "3"
 thiserror = "1"
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 zstd = "0.11"

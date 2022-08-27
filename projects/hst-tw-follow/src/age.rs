@@ -163,30 +163,35 @@ impl ProfileAgeDb {
         Ok(removed)
     }
 
-    pub fn queue_status(&self) -> Result<(usize, DateTime<Utc>), Error> {
+    pub fn queue_status(&self, min_age: Duration) -> Result<(usize, DateTime<Utc>), Error> {
         let iter = self.db.prefix_iterator([AGE_TAG]);
         let mut prioritized_count = 0;
         let mut past_prioritized = false;
         let mut first_next = DateTime::<Utc>::MIN_UTC;
+        let now = Utc::now();
 
         for result in iter {
             let (key, value) = result?;
 
             if key[0] == AGE_TAG {
                 let (next, _) = parse_age_key(&key)?;
-                let (_, started) = parse_age_value(&value)?;
+                let (last, started) = parse_age_value(&value)?;
 
                 match next {
                     Some(next) => {
                         past_prioritized = true;
 
-                        if started.is_none() {
+                        if started.is_none() && last.filter(|last| now - *last < min_age).is_none()
+                        {
                             first_next = next;
                             break;
                         }
                     }
                     None => {
-                        if started.is_none() && !past_prioritized {
+                        if started.is_none()
+                            && !past_prioritized
+                            && last.filter(|last| now - *last < min_age).is_none()
+                        {
                             prioritized_count += 1;
                         }
                     }

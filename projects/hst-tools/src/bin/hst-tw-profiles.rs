@@ -64,7 +64,7 @@ struct Opts {
 
 #[derive(Debug, Parser)]
 enum Command {
-    /// Validate a directory of ZST-compressed ND-JSON files
+    /// Validate a directory of ZSTD-compressed ND-JSON files
     Validate {
         /// Directory path
         #[clap(long)]
