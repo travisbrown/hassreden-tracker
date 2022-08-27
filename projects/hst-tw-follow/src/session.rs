@@ -22,7 +22,7 @@ const RUN_DURATION_BUFFER_S: i64 = 20 * 60;
 const MIN_FOLLOWERS_COUNT: usize = 15_000;
 const MAX_FOLLOWERS_COUNT: usize = 1_000_000;
 const MIN_TARGET_AGE_H: i64 = 48;
-const MAX_TARGET_AGE_D: i64 = 28;
+const MAX_TARGET_AGE_D: i64 = 21;
 
 /// This is supposed to be 15 minutes but in practice seems longer.
 const RATE_LIMIT_WINDOW_S: i64 = 24 * 60;

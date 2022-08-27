@@ -11,8 +11,8 @@ use std::io::{BufWriter, Write};
 use std::path::Path;
 use std::sync::Arc;
 
-const MIN_AGE_S: i64 = 120 * 60;
-const MIN_RUNNING_S: i64 = 60 * 60;
+const MIN_AGE_S: i64 = 6 * 60 * 60;
+const MIN_RUNNING_S: i64 = 25 * 60;
 
 #[derive(thiserror::Error, Debug)]
 pub enum Error {

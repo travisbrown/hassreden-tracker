@@ -188,7 +188,7 @@ async fn run_loop(session: &Session, token_type: TokenType) -> Result<(), Error>
                 }
             },
             Err(error) => {
-                log::error!("{:?}", error);
+                log::error!("Follows error: {:?}", error);
                 if !wait_for_window_follow(&error).await {
                     tokio::time::sleep(tokio::time::Duration::from_secs(ERROR_WAIT_S)).await;
                 }
@@ -233,7 +233,7 @@ async fn download_loop(
                 }
             }
             Err(error) => {
-                log::error!("{:?}", error);
+                log::error!("Downloader error: {:?}", error);
                 if !wait_for_window_downloader(&error).await {
                     tokio::time::sleep(tokio::time::Duration::from_secs(ERROR_WAIT_S)).await;
                 }
