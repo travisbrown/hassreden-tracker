@@ -94,7 +94,6 @@ impl Downloader {
                 Err((UserID::ID(user_id), status)) => {
                     let status_code = status.code() as u32;
                     deactivations.insert(user_id, (status_code, now));
-                    ids.insert(user_id);
                 }
                 Err((user_id, _)) => {
                     return Err(Error::UnexpectedUserId(user_id));
@@ -104,6 +103,10 @@ impl Downloader {
 
         for id in ids {
             self.profile_age_db.finish(id, self.default_target_age)?;
+        }
+
+        for id in deactivations.keys() {
+            self.profile_age_db.delete(*id)?;
         }
 
         let deactivations_len = deactivations.len();
