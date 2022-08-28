@@ -12,6 +12,7 @@ edition = "2021"
 
 [dependencies]
 chrono = "0.4"
+csv = "1"
 egg-mode = "0.16"
 egg-mode-extras = "0.3"
 flate2 = "1"

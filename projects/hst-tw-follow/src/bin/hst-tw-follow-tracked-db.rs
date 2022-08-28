@@ -71,16 +71,8 @@ fn main() -> Result<(), Error> {
             }
         }
         Command::Export => {
-            for (id, screen_name, target_age) in db.export()? {
-                println!(
-                    "{},{},{}",
-                    id,
-                    screen_name,
-                    target_age
-                        .map(|duration| duration.num_seconds().to_string())
-                        .unwrap_or_default()
-                );
-            }
+            let mut stdout = std::io::stdout().lock();
+            db.export(&mut stdout)?;
         }
     }
 

@@ -1,8 +1,10 @@
 use super::util::{SQLiteDuration, SQLiteId};
 use chrono::Duration;
+use csv::StringRecord;
 use hst_tw_db::ProfileDb;
 use rusqlite::{params, Connection, OptionalExtension, Row};
 use std::collections::{HashMap, HashSet};
+use std::io::{Read, Write};
 use std::path::Path;
 use std::sync::{Arc, RwLock};
 
@@ -16,6 +18,86 @@ pub struct TrackedUser {
     pub blocks: HashSet<u64>,
 }
 
+impl From<&TrackedUser> for StringRecord {
+    fn from(user: &TrackedUser) -> Self {
+        let mut block_target_ids = user.blocks.iter().collect::<Vec<_>>();
+        block_target_ids.sort_unstable();
+
+        let id = user.id.to_string();
+        let screen_name = user.screen_name.clone();
+        let target_age = user
+            .target_age
+            .map(|target_age| target_age.num_seconds().to_string())
+            .unwrap_or_default();
+        let followers_count = user.followers_count.to_string();
+        let protected = user.protected.to_string();
+        let blocks = block_target_ids
+            .into_iter()
+            .map(|target_id| target_id.to_string())
+            .collect::<Vec<_>>()
+            .join(";");
+
+        Self::from(vec![
+            id,
+            screen_name,
+            target_age,
+            followers_count,
+            protected,
+            blocks,
+        ])
+    }
+}
+
+impl TryFrom<&StringRecord> for TrackedUser {
+    type Error = Error;
+
+    fn try_from(record: &StringRecord) -> Result<Self, Self::Error> {
+        if record.len() != 6 {
+            Err(Error::CsvRecord(record.clone()))
+        } else {
+            let id = record[0]
+                .parse::<u64>()
+                .map_err(|_| Error::CsvRecord(record.clone()))?;
+            let screen_name = record[1].to_string();
+            let target_age = if record[2].is_empty() {
+                None
+            } else {
+                let target_age_s = record[2]
+                    .parse::<i64>()
+                    .map_err(|_| Error::CsvRecord(record.clone()))?;
+                Some(Duration::seconds(target_age_s))
+            };
+            let followers_count = record[3]
+                .parse::<usize>()
+                .map_err(|_| Error::CsvRecord(record.clone()))?;
+            let protected = record[4]
+                .parse::<bool>()
+                .map_err(|_| Error::CsvRecord(record.clone()))?;
+            let blocks = record[5]
+                .split(';')
+                .map(|id_str| {
+                    Ok::<_, Error>(
+                        id_str
+                            .parse::<u64>()
+                            .map_err(|_| Error::CsvRecord(record.clone()))?,
+                    )
+                })
+                .collect::<Result<Vec<_>, _>>()?
+                .into_iter()
+                .collect();
+
+            Ok(Self {
+                id,
+                screen_name,
+                target_age,
+                followers_count,
+                protected,
+                blocks,
+            })
+        }
+    }
+}
+
 #[derive(thiserror::Error, Debug)]
 pub enum Error {
     #[error("I/O error")]
@@ -24,6 +106,10 @@ pub enum Error {
     Db(#[from] rusqlite::Error),
     #[error("ProfileDB error")]
     ProfileDb(#[from] hst_tw_db::Error),
+    #[error("CSV error")]
+    Csv(#[from] csv::Error),
+    #[error("Invalid CSV record")]
+    CsvRecord(StringRecord),
 }
 
 const ID_SELECT: &str = "SELECT id FROM user ORDER BY id";
@@ -214,13 +300,17 @@ impl TrackedUserDb {
         Ok(users)
     }
 
-    pub fn export(&self) -> Result<Vec<(u64, String, Option<Duration>)>, Error> {
+    pub fn export<W: Write>(&self, writer: &mut W) -> Result<(), Error> {
         let users = self.users()?;
+        let mut writer = csv::WriterBuilder::new()
+            .has_headers(false)
+            .from_writer(writer);
 
-        Ok(users
-            .into_iter()
-            .map(|user| (user.id, user.screen_name, user.target_age))
-            .collect())
+        for user in users {
+            writer.write_byte_record(&StringRecord::from(&user).into_byte_record())?;
+        }
+
+        Ok(())
     }
 }
 
