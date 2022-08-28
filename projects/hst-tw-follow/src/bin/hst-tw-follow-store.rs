@@ -15,6 +15,9 @@ fn main() -> Result<(), Error> {
     let store = Store::open(opts.store)?;
 
     match opts.command {
+        Command::Archive => {
+            store.archive()?;
+        }
         Command::Validate => {
             store.validate()?;
         }
@@ -146,6 +149,7 @@ struct Opts {
 
 #[derive(Debug, Parser)]
 enum Command {
+    Archive,
     Validate,
     BatchInfo,
     Dump,

@@ -4,7 +4,7 @@ use crate::{
     store::Store,
     Batch,
 };
-use chrono::{Duration, Utc};
+use chrono::{Duration, SubsecRound, Utc};
 use egg_mode_extras::{
     client::{Client, FormerUserStatus, TokenType},
     error::UnavailableReason,
@@ -132,7 +132,7 @@ impl Session {
             }
 
             let mut candidates = vec![];
-            let now = Utc::now();
+            let now = Utc::now().trunc_subsecs(0);
 
             for (id, user) in new_users {
                 candidates.push((id, Some(user), Duration::max_value()));
@@ -248,11 +248,13 @@ impl Session {
                                 .put_block(user_id, self.twitter_client.user_id())?;
                         }
                         UnavailableStatus::Deactivated => {
-                            self.deactivations.add(user_id, 50, Utc::now());
+                            self.deactivations
+                                .add(user_id, 50, Utc::now().trunc_subsecs(0));
                             self.deactivations.flush()?;
                         }
                         UnavailableStatus::Suspended => {
-                            self.deactivations.add(user_id, 63, Utc::now());
+                            self.deactivations
+                                .add(user_id, 63, Utc::now().trunc_subsecs(0));
                             self.deactivations.flush()?;
                         }
                         UnavailableStatus::Protected => {

@@ -2,7 +2,7 @@ use super::{
     formats::archive::{write_batch, FollowReader},
     Batch, Change,
 };
-use chrono::{DateTime, Duration, NaiveDate, Utc};
+use chrono::{DateTime, Duration, NaiveDate, SubsecRound, Utc};
 use std::cmp::Reverse;
 use std::collections::{HashMap, HashSet};
 use std::fs::{File, OpenOptions};
@@ -88,7 +88,7 @@ impl State {
                 following_ids.sort_unstable();
 
                 Batch::new(
-                    Utc::now(),
+                    Utc::now().trunc_subsecs(0),
                     user_id,
                     Some(Change::new(follower_ids, vec![])),
                     Some(Change::new(following_ids, vec![])),
@@ -120,7 +120,7 @@ impl State {
                 followed_removal_ids.sort_unstable();
 
                 Batch::new(
-                    Utc::now(),
+                    Utc::now().trunc_subsecs(0),
                     user_id,
                     Some(Change::new(follower_addition_ids, follower_removal_ids)),
                     Some(Change::new(followed_addition_ids, followed_removal_ids)),
@@ -359,8 +359,8 @@ impl Store {
             Ok(None)
         } else {
             let mut by_path = to_archive
-                .iter()
-                .map(|(&date, batches)| (date, self.past_date_path(date), batches))
+                .into_iter()
+                .map(|(date, batches)| (date, self.past_date_path(date), batches))
                 .collect::<Vec<_>>();
 
             by_path.sort();
@@ -376,13 +376,15 @@ impl Store {
             } else {
                 let mut archived_count = 0;
 
-                for (_, path, batches) in by_path {
+                for (_, path, mut batches) in by_path {
+                    batches.sort();
+
                     let file = OpenOptions::new().write(true).create_new(true).open(path)?;
                     let mut writer = Encoder::new(file, ZSTD_LEVEL)?.auto_finish();
 
                     for batch in batches {
                         archived_count += 1;
-                        write_batch(&mut writer, batch)?;
+                        write_batch(&mut writer, &batch)?;
                     }
                 }
 
@@ -402,7 +404,7 @@ impl Store {
 
     /// Returns an unordered list of users, their last update time, and check-out status.
     pub fn user_updates(&self) -> Vec<(u64, DateTime<Utc>, bool)> {
-        let now = Utc::now();
+        let now = Utc::now().trunc_subsecs(0);
 
         let state = self.state.read().unwrap();
         let mut user_ages = Vec::with_capacity(state.users.len());
@@ -426,7 +428,7 @@ impl Store {
         user_id: u64,
         estimated_run_duration: Duration,
     ) -> Result<Option<DateTime<Utc>>, Error> {
-        let now = Utc::now();
+        let now = Utc::now().trunc_subsecs(0);
 
         let mut state = self.state.write().unwrap();
         let user_state = state

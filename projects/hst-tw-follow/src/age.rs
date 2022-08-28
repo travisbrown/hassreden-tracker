@@ -1,6 +1,6 @@
 //! A RocksDB database for storing user profile ages.
 
-use chrono::{DateTime, Duration, TimeZone, Utc};
+use chrono::{DateTime, Duration, SubsecRound, TimeZone, Utc};
 use rocksdb::{Options, TransactionDB, TransactionDBOptions};
 use std::path::Path;
 use std::sync::Arc;
@@ -116,7 +116,7 @@ impl ProfileAgeDb {
     pub fn finish(&self, id: u64, default_target_age: Duration) -> Result<bool, Error> {
         let tx = self.db.transaction();
         let id_key = id_key(id);
-        let now = Utc::now();
+        let now = Utc::now().trunc_subsecs(0);
 
         let replaced = match tx.get_pinned_for_update(id_key, true)? {
             Some(value) => {
@@ -168,7 +168,7 @@ impl ProfileAgeDb {
         let mut prioritized_count = 0;
         let mut past_prioritized = false;
         let mut first_next = DateTime::<Utc>::MIN_UTC;
-        let now = Utc::now();
+        let now = Utc::now().trunc_subsecs(0);
 
         for result in iter {
             let (key, value) = result?;
@@ -212,7 +212,7 @@ impl ProfileAgeDb {
     ) -> Result<Vec<u64>, Error> {
         let tx = self.db.transaction();
         let iter = tx.prefix_iterator([AGE_TAG]);
-        let now = Utc::now();
+        let now = Utc::now().trunc_subsecs(0);
 
         let pairs = iter
             .map(|result| {
@@ -253,7 +253,7 @@ impl ProfileAgeDb {
             .take(count)
             .collect::<Result<Vec<_>, _>>()?;
 
-        let now = Utc::now();
+        let now = Utc::now().trunc_subsecs(0);
         let mut ids = Vec::with_capacity(pairs.len());
 
         for (age_key, id, last) in pairs {

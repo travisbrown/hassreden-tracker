@@ -1,5 +1,5 @@
 use crate::age::ProfileAgeDb;
-use chrono::{DateTime, Duration, Utc};
+use chrono::{DateTime, Duration, SubsecRound, Utc};
 use egg_mode::user::UserID;
 use egg_mode_extras::client::{Client, TokenType};
 use futures::stream::TryStreamExt;
@@ -82,7 +82,7 @@ impl Downloader {
         let mut ids = HashSet::new();
 
         for result in results {
-            let now = Utc::now();
+            let now = Utc::now().trunc_subsecs(0);
             match result {
                 Ok(mut value) => {
                     timestamp_json(&mut value, now)?;
