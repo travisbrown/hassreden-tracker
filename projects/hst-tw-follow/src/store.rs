@@ -34,7 +34,10 @@ pub enum Error {
     #[error("Invalid past file path")]
     InvalidPastFile(Box<Path>),
     #[error("Invalid batch")]
-    InvalidBatch(Batch),
+    InvalidBatch {
+        file_date: Option<NaiveDate>,
+        batch: Batch,
+    },
 }
 
 struct UserState {
@@ -484,11 +487,17 @@ impl Store {
             let (date, batch) = result?;
 
             if date != batch.timestamp.date_naive() || last_timestamp > batch.timestamp {
-                return Err(Error::InvalidBatch(batch));
+                return Err(Error::InvalidBatch {
+                    file_date: Some(date),
+                    batch,
+                });
             }
 
             if last_timestamp == batch.timestamp && last_user_id >= batch.user_id {
-                return Err(Error::InvalidBatch(batch));
+                return Err(Error::InvalidBatch {
+                    file_date: Some(date),
+                    batch,
+                });
             }
 
             last_timestamp = batch.timestamp;
@@ -499,7 +508,10 @@ impl Store {
 
         for batch in self.current_batches()? {
             if batch.timestamp.date_naive() != now_date {
-                return Err(Error::InvalidBatch(batch));
+                return Err(Error::InvalidBatch {
+                    file_date: None,
+                    batch,
+                });
             }
         }
 
