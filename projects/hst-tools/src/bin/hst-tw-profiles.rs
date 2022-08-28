@@ -5,6 +5,7 @@ use futures::{
 };
 use hst_cli::prelude::*;
 use hst_tw_profiles::model::User;
+use std::collections::HashSet;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::path::Path;
@@ -41,8 +42,8 @@ async fn main() -> Result<(), Error> {
                         .map_ok_or_else(|error| Err(Error::from(error)), |result| result))
                 })
                 .try_buffer_unordered(8)
-                .try_for_each(|(date, count)| async move {
-                    println!("{},{}", date, count);
+                .try_for_each(|(date, profile_count, user_count)| async move {
+                    println!("{},{},{}", date, profile_count, user_count);
 
                     Ok(())
                 })
@@ -84,12 +85,13 @@ fn extract_path_date<P: AsRef<Path>>(path: P) -> Result<NaiveDate, Error> {
         .map_err(|_| Error::InvalidPath(path.as_ref().to_path_buf().into_boxed_path()))
 }
 
-fn validate_zst<P: AsRef<Path>>(path: P) -> Result<(NaiveDate, usize), Error> {
+fn validate_zst<P: AsRef<Path>>(path: P) -> Result<(NaiveDate, usize, usize), Error> {
     let date = extract_path_date(&path)?;
     let reader = BufReader::new(zstd::stream::read::Decoder::new(File::open(path)?)?);
     let mut count = 0;
     let mut last_snapshot = 0;
     let mut last_user_id = 0;
+    let mut user_ids = HashSet::new();
 
     for (i, line) in reader.lines().enumerate() {
         let line = line?;
@@ -109,7 +111,8 @@ fn validate_zst<P: AsRef<Path>>(path: P) -> Result<(NaiveDate, usize), Error> {
 
         last_snapshot = profile.snapshot;
         last_user_id = profile.id();
+        user_ids.insert(last_user_id);
     }
 
-    Ok((date, count))
+    Ok((date, count, user_ids.len()))
 }
