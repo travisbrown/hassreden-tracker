@@ -138,7 +138,7 @@ struct Opts {
     #[clap(flatten)]
     verbose: Verbosity,
     /// Follow data directory path
-    #[clap(long, default_value = "follow-data/")]
+    #[clap(long, default_value = "data/follows")]
     store: String,
     #[clap(subcommand)]
     command: Command,
