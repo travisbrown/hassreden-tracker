@@ -7,7 +7,7 @@ description = "RocksDB database for storing Twitter user profiles"
 keywords = ["twitter"]
 license-file = "../../LICENSE"
 readme = "../../README.md"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 
 [dependencies]
@@ -15,4 +15,4 @@ apache-avro = { version = "0.14", features = ["snappy"] }
 chrono = "0.4"
 rocksdb = { version = "0.19", default-features = false, features = ["zstd"] }
 thiserror = "1"
-hst-tw-profiles = { path = "../hst-tw-profiles" }
+hst-tw-profiles = { path = "../hst-tw-profiles", version = "0.2.0" }
