@@ -3,7 +3,7 @@
 use apache_avro::{from_avro_datum, from_value, to_avro_datum, to_value};
 use chrono::{DateTime, TimeZone, Utc};
 use hst_tw_profiles::{avro::USER_SCHEMA, model::User};
-use rocksdb::{DBCompressionType, DBIterator, IteratorMode, Options, DB};
+use rocksdb::{BlockBasedOptions, DBCompressionType, DBIterator, IteratorMode, Options, DB};
 use std::io::Cursor;
 use std::iter::Peekable;
 use std::marker::PhantomData;
@@ -167,6 +167,11 @@ impl<M: table::Mode> ProfileDb<M> {
         let mut options = Options::default();
         options.create_if_missing(true);
         options.set_compression_type(DBCompressionType::Zstd);
+
+        let mut block_options = BlockBasedOptions::default();
+        block_options.set_ribbon_filter(10.0);
+
+        options.set_block_based_table_factory(&block_options);
 
         if enable_statistics {
             options.enable_statistics();
