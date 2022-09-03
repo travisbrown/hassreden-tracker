@@ -5,6 +5,7 @@ use futures::{
 };
 use hst_cli::prelude::*;
 use hst_tw_profiles::model::User;
+use regex::Regex;
 use std::collections::HashSet;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
@@ -30,10 +31,14 @@ async fn main() -> Result<(), Error> {
     opts.verbose.init_logging()?;
 
     match opts.command {
-        Command::Validate { base } => {
+        Command::Validate { base, filter } => {
             let mut zst_files = std::fs::read_dir(base)?
                 .map(|result| result.map(|entry| entry.path()))
                 .collect::<Result<Vec<_>, _>>()?;
+
+            if let Some(filter_re) = filter {
+                zst_files.retain(|path| filter_re.is_match(&path.to_string_lossy()));
+            }
             zst_files.sort();
 
             futures::stream::iter(zst_files)
@@ -70,6 +75,9 @@ enum Command {
         /// Directory path
         #[clap(long)]
         base: String,
+        /// File name filter
+        #[clap(long)]
+        filter: Option<Regex>,
     },
 }
 
