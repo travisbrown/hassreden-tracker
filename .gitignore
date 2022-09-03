@@ -1,3 +1,4 @@
 projects/Cargo.lock
 projects/target/
+projects/tmp/
 projects/*/target/
