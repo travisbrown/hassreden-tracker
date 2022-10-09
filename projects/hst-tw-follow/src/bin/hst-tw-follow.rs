@@ -204,6 +204,7 @@ async fn download_loop(
     token_type: TokenType,
 ) -> Result<(), Error> {
     loop {
+        log::info!("Beginning download: {}", count);
         match downloader.run_batch(count, token_type).await.and_then(
             |(deactivated_count, profile_count)| {
                 downloader
