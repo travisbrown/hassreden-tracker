@@ -82,6 +82,64 @@ fn main() -> Result<(), Error> {
                 println!("{},{},{}", user_id, count, snapshot.timestamp());
             }
         }
+        Command::DisplayNameSearch { query } => {
+            let query = query.to_lowercase();
+            let db = ProfileDb::<ReadOnly>::open(opts.db, true)?;
+            let mut writer = csv::WriterBuilder::new().from_writer(std::io::stdout());
+
+            for result in db.iter() {
+                let (id, mut users) = result?;
+                users.reverse();
+
+                let mut is_match = false;
+
+                if let Some((observed, user)) = users.first() {
+                    let observed = observed.to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
+                    if user.name.to_lowercase().contains(&query) {
+                        writer.write_record([
+                            user.id.to_string(),
+                            user.screen_name.to_string(),
+                            user.followers_count.to_string(),
+                            "first".to_string(),
+                            observed.to_string(),
+                            "".to_string(),
+                            user.name.to_string(),
+                        ])?;
+                        is_match = true;
+                    }
+                }
+
+                for pair in users.windows(2) {
+                    let (_, previous_user) = &pair[0];
+                    let (observed, user) = &pair[1];
+                    let observed = observed.to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
+
+                    if !is_match && user.name.to_lowercase().contains(&query) {
+                        writer.write_record([
+                            user.id.to_string(),
+                            user.screen_name.to_string(),
+                            user.followers_count.to_string(),
+                            "added".to_string(),
+                            observed.to_string(),
+                            previous_user.name.to_string(),
+                            user.name.to_string(),
+                        ])?;
+                        is_match = true;
+                    } else if is_match && !user.name.to_lowercase().contains(&query) {
+                        writer.write_record([
+                            user.id.to_string(),
+                            user.screen_name.to_string(),
+                            user.followers_count.to_string(),
+                            "removed".to_string(),
+                            observed.to_string(),
+                            previous_user.name.to_string(),
+                            user.name.to_string(),
+                        ])?;
+                        is_match = false;
+                    }
+                }
+            }
+        }
     }
 
     Ok(())
@@ -99,6 +157,8 @@ pub enum Error {
     Json(#[from] serde_json::Error),
     #[error("I/O error")]
     Io(#[from] std::io::Error),
+    #[error("CSV error")]
+    Csv(#[from] csv::Error),
     #[error("Log initialization error")]
     LogInitialization(#[from] log::SetLoggerError),
 }
@@ -129,4 +189,7 @@ enum Command {
     Count,
     Stats,
     Ids,
+    DisplayNameSearch {
+        query: String,
+    },
 }
