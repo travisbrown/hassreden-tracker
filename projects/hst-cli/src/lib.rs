@@ -24,9 +24,10 @@
 //! [clap]: https://docs.rs/clap/latest/clap/
 //! [simplelog]: https://docs.rs/simplelog/latest/simplelog/
 
+use clap::ArgAction;
 use simplelog::LevelFilter;
 
-fn select_log_level_filter(verbosity: i8) -> LevelFilter {
+fn select_log_level_filter(verbosity: u8) -> LevelFilter {
     match verbosity {
         0 => LevelFilter::Off,
         1 => LevelFilter::Error,
@@ -40,12 +41,12 @@ fn select_log_level_filter(verbosity: i8) -> LevelFilter {
 #[derive(clap::Args, Debug, Clone)]
 pub struct Verbosity {
     /// Level of verbosity
-    #[clap(long, short = 'v', parse(from_occurrences), global = true)]
-    verbose: i8,
+    #[clap(long, short = 'v', global = true, action = ArgAction::Count)]
+    verbose: u8,
 }
 
 impl Verbosity {
-    pub fn new(verbose: i8) -> Self {
+    pub fn new(verbose: u8) -> Self {
         Self { verbose }
     }
 
@@ -65,8 +66,8 @@ pub mod prelude {
     pub use ::clap::Parser;
     pub mod clap {
         pub use clap::{
-            builder, AppSettings, Arg, ArgAction, ArgMatches, Args, Command, CommandFactory, Error,
-            ErrorKind, FromArgMatches, Parser, Subcommand,
+            builder, error, value_parser, Arg, ArgAction, ArgGroup, ArgMatches, Args, Command,
+            CommandFactory, Error, FromArgMatches, Id, Parser, Subcommand,
         };
     }
     pub mod log {
