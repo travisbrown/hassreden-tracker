@@ -14,7 +14,7 @@ edition = "2021"
 chrono = "0.4"
 csv = "1"
 egg-mode = "0.16"
-egg-mode-extras = "0.3"
+egg-mode-extras = "0.3.3"
 flate2 = "1"
 futures = "0.3"
 hst-cli = { path = "../hst-cli" }
