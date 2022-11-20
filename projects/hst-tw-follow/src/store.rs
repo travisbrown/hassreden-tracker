@@ -28,7 +28,7 @@ pub enum Error {
     #[error("User ID is not tracked")]
     UntrackedId(u64),
     #[error("Batch is stale")]
-    StaleBatch(Batch),
+    StaleBatch(Box<Batch>),
     #[error("Past file exists")]
     PastFileCollision(Box<Path>),
     #[error("Invalid past file path")]
@@ -36,7 +36,7 @@ pub enum Error {
     #[error("Invalid batch")]
     InvalidBatch {
         file_date: Option<NaiveDate>,
-        batch: Batch,
+        batch: Box<Batch>,
     },
 }
 
@@ -146,7 +146,7 @@ impl State {
             .map(|last_update| last_update != user_state.last_update)
             .unwrap_or(false)
         {
-            Err(Error::StaleBatch(batch.clone()))
+            Err(Error::StaleBatch(Box::new(batch.clone())))
         } else {
             user_state.last_update = batch.timestamp;
             user_state.expiration = None;
@@ -247,6 +247,26 @@ impl Store {
         user_ids
     }
 
+    pub fn user_followers(&self, id: u64) -> Option<Vec<u64>> {
+        let state = self.state.read().unwrap();
+
+        state.users.get(&id).map(|user_state| {
+            let mut results = user_state.followers.iter().copied().collect::<Vec<_>>();
+            results.sort_unstable();
+            results
+        })
+    }
+
+    pub fn user_following(&self, id: u64) -> Option<Vec<u64>> {
+        let state = self.state.read().unwrap();
+
+        state.users.get(&id).map(|user_state| {
+            let mut results = user_state.following.iter().copied().collect::<Vec<_>>();
+            results.sort_unstable();
+            results
+        })
+    }
+
     pub fn followers(&self) -> Vec<(u64, Vec<u64>)> {
         let state = self.state.read().unwrap();
         let mut results = state
@@ -310,6 +330,120 @@ impl Store {
                 },
             )
     }
+
+    fn new_addition_add_batch(
+        by_date: &mut HashMap<NaiveDate, HashMap<u64, (usize, usize)>>,
+        day_window: usize,
+        batch: &Batch,
+    ) {
+        let first_date = batch.timestamp.date_naive();
+        let dates =
+            std::iter::successors(Some(first_date), |date| date.succ_opt()).take(day_window);
+
+        for date in dates {
+            let counts = by_date.entry(date).or_default();
+
+            if let Some(change) = &batch.follower_change {
+                for id in &change.addition_ids {
+                    let (_, count) = counts.entry(*id).or_default();
+                    *count += 1;
+                }
+            }
+
+            if let Some(change) = &batch.followed_change {
+                for id in &change.addition_ids {
+                    let (count, _) = counts.entry(*id).or_default();
+                    *count += 1;
+                }
+            }
+        }
+    }
+
+    pub fn new_addition_counts(
+        &self,
+        day_window: usize,
+    ) -> Result<Vec<(NaiveDate, HashMap<u64, (usize, usize)>)>, Error> {
+        let mut by_date = HashMap::new();
+
+        for result in self.past_batches() {
+            let (_, batch) = result?;
+
+            Self::new_addition_add_batch(&mut by_date, day_window, &batch);
+        }
+
+        let mut by_date = by_date.into_iter().collect::<Vec<_>>();
+        by_date.sort_by_key(|(date, _)| *date);
+        by_date.truncate(by_date.len() - day_window + 1);
+
+        Ok(by_date)
+    }
+
+    pub fn new_addition_report(
+        &self,
+        day_window: usize,
+        min_follower_ratio: Option<f64>,
+        _min_followed_ratio: Option<f64>,
+    ) -> Result<Vec<(NaiveDate, HashMap<u64, ((usize, usize), (usize, usize))>)>, Error> {
+        let by_date = self.new_addition_counts(day_window)?;
+
+        let mut new_by_date = Vec::with_capacity(by_date.len() - 1);
+        let mut acc_counts = by_date[0].1.clone();
+
+        for (date, counts) in by_date.iter().skip(1) {
+            let mut new_counts = HashMap::new();
+
+            for (id, (new_follower_count, new_followed_count)) in counts {
+                let (total_follower_count, total_followed_count) =
+                    acc_counts.entry(*id).or_default();
+
+                if (*new_follower_count as f64 / (*total_follower_count + 1) as f64)
+                    > min_follower_ratio.unwrap_or_default()
+                    && (*new_followed_count as f64 / (*total_followed_count + 1) as f64)
+                        > min_follower_ratio.unwrap_or_default()
+                {
+                    new_counts.insert(
+                        *id,
+                        (
+                            (*new_follower_count, *total_follower_count),
+                            (*new_followed_count, *total_followed_count),
+                        ),
+                    );
+                }
+                *total_follower_count += new_follower_count;
+                *total_followed_count += new_followed_count;
+            }
+
+            new_by_date.push((*date, new_counts));
+        }
+
+        Ok(new_by_date)
+    }
+
+    /*pub fn past_batches_by_date(&self) -> PastBatchIterator<ZstFollowReader<'_>> {
+        std::fs::read_dir(self.past_dir_path())
+            .map_err(Error::from)
+            .and_then(|entries| {
+                let mut paths = entries
+                    .map(|result| {
+                        result.map_err(Error::from).and_then(|entry| {
+                            extract_path_date(entry.path())
+                                .map(|date| (date, entry.path().into_boxed_path()))
+                        })
+                    })
+                    .collect::<Result<Vec<_>, _>>()?;
+                paths.sort();
+                paths.reverse();
+
+                Ok(paths)
+            })
+            .map_or_else(
+                |error| PastBatchIterator::Failed(Some(error)),
+                |paths| PastBatchIterator::Remaining {
+                    paths,
+                    current: None,
+                },
+            )
+    }*/
 
     fn past_date_path(&self, date: NaiveDate) -> Box<Path> {
         self.base
@@ -491,14 +625,14 @@ impl Store {
             if date != batch.timestamp.date_naive() || last_timestamp > batch.timestamp {
                 return Err(Error::InvalidBatch {
                     file_date: Some(date),
-                    batch,
+                    batch: Box::new(batch),
                 });
             }
 
             if last_timestamp == batch.timestamp && last_user_id >= batch.user_id {
                 return Err(Error::InvalidBatch {
                     file_date: Some(date),
-                    batch,
+                    batch: Box::new(batch),
                 });
             }
 
@@ -512,7 +646,7 @@ impl Store {
             if batch.timestamp.date_naive() != now_date {
                 return Err(Error::InvalidBatch {
                     file_date: None,
-                    batch,
+                    batch: Box::new(batch),
                 });
             }
         }

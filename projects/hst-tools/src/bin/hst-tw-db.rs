@@ -1,4 +1,5 @@
 use hst_cli::prelude::*;
+use hst_deactivations::DeactivationLog;
 use hst_tw_db::{
     table::{ReadOnly, Table, Writeable},
     ProfileDb,
@@ -30,6 +31,34 @@ fn main() -> Result<(), Error> {
 
             for (_, user) in users {
                 println!("{}", serde_json::to_value(user)?);
+            }
+        }
+        Command::LookupAll => {
+            let lines = std::io::stdin().lines();
+            let db = ProfileDb::<ReadOnly>::open(opts.db, true)?;
+
+            for line in lines {
+                let line = line?;
+                let id = line.parse::<u64>().unwrap();
+                let users = db.lookup(id)?;
+                if let Some((_, user)) = users.first() {
+                    println!("{},{},{}", user.id, user.screen_name, user.followers_count);
+                } else {
+                    println!("{},,", id);
+                }
+            }
+        }
+        Command::LookupAllJson => {
+            let lines = std::io::stdin().lines();
+            let db = ProfileDb::<ReadOnly>::open(opts.db, true)?;
+
+            for line in lines {
+                let line = line?;
+                let id = line.parse::<u64>().unwrap();
+                let users = db.lookup(id)?;
+                if let Some((_, user)) = users.first() {
+                    println!("{}", serde_json::json!(user));
+                }
             }
         }
         Command::Count => {
@@ -88,7 +117,7 @@ fn main() -> Result<(), Error> {
             let mut writer = csv::WriterBuilder::new().from_writer(std::io::stdout());
 
             for result in db.iter() {
-                let (id, mut users) = result?;
+                let (_, mut users) = result?;
                 users.reverse();
 
                 let mut is_match = false;
@@ -140,6 +169,34 @@ fn main() -> Result<(), Error> {
                 }
             }
         }
+        Command::CheckReversals { deactivations } => {
+            let db = ProfileDb::<ReadOnly>::open(opts.db, true)?;
+            let mut deactivations = DeactivationLog::read(File::open(deactivations)?)?;
+            let deactivated_ids = deactivations.current_deactivated(None);
+            let mut reversals = vec![];
+
+            for result in db.iter() {
+                let (id, users) = result?;
+
+                if deactivated_ids.contains(&id) {
+                    if let Some(deactivation_time) = deactivations.status_timestamp(id) {
+                        if let Some((snapshot, user)) = users
+                            .iter()
+                            .rev()
+                            .find(|(snapshot, _)| *snapshot > deactivation_time)
+                        {
+                            log::info!("{},{}", user.id, snapshot);
+                            reversals.push((user.id(), *snapshot));
+                        }
+                    }
+                }
+            }
+
+            if let Err(update_errors) = deactivations.update_with_reversals(reversals.into_iter()) {
+                log::error!("{} update errors", update_errors.len());
+            }
+            deactivations.write(std::io::stdout())?;
+        }
     }
 
     Ok(())
@@ -147,6 +204,8 @@ fn main() -> Result<(), Error> {
 
 #[derive(thiserror::Error, Debug)]
 pub enum Error {
+    #[error("Deactivations file error")]
+    Deactivations(#[from] hst_deactivations::Error),
     #[error("ProfileDb error")]
     ProfileDb(#[from] hst_tw_db::Error),
     #[error("Profile Avro error")]
@@ -186,10 +245,17 @@ enum Command {
         /// Twitter user ID
         id: u64,
     },
+    LookupAll,
+    LookupAllJson,
     Count,
     Stats,
     Ids,
     DisplayNameSearch {
         query: String,
+    },
+    CheckReversals {
+        /// Avro input path
+        #[clap(short, long)]
+        deactivations: String,
     },
 }

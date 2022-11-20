@@ -169,12 +169,10 @@ impl<R: Read> FollowReader<R> {
                 .map_or_else(
                     || Err(Error::InvalidHeader(self.header_buffer)),
                     |(follower_lens, followed_lens)| {
-                        Ok(Some((
-                            Utc.timestamp(timestamp_s.into(), 0),
-                            user_id,
-                            follower_lens,
-                            followed_lens,
-                        )))
+                        Ok(Utc
+                            .timestamp_opt(timestamp_s.into(), 0)
+                            .single()
+                            .map(|timestamp| (timestamp, user_id, follower_lens, followed_lens)))
                     },
                 )
             }

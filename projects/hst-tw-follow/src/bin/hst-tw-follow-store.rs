@@ -1,10 +1,10 @@
-use chrono::{TimeZone, Utc};
+use chrono::{DateTime, TimeZone, Utc};
 use hst_cli::prelude::*;
 use hst_deactivations::DeactivationLog;
 use hst_tw_follow::formats::{archive::write_batches, legacy, transform::deduplicate_removals};
 use hst_tw_follow::{store::Store, Batch};
 use std::cmp::Reverse;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::fs::File;
 use std::io::BufWriter;
 
@@ -29,6 +29,55 @@ fn main() -> Result<(), Error> {
 
             for batch in store.current_batches()? {
                 print_batch(&batch);
+            }
+        }
+        Command::ByUser => {
+            let mut by_user = HashMap::<u64, Vec<DateTime<Utc>>>::new();
+
+            for result in store.past_batches() {
+                let (_, batch) = result?;
+                let dates = by_user.entry(batch.user_id).or_default();
+                dates.push(batch.timestamp);
+            }
+
+            let mut by_user_vec = by_user.into_iter().collect::<Vec<_>>();
+            by_user_vec.sort_by_key(|(id, _)| *id);
+
+            for (id, dates) in by_user_vec {
+                let dates = dates
+                    .into_iter()
+                    .map(|date| date.timestamp().to_string())
+                    .collect::<Vec<_>>();
+                println!("{},{}", id, dates.join(","));
+            }
+        }
+        Command::TimeScores { window, count } => {
+            let date_counts = store.new_addition_report(window as usize, Some(0.25), None)?;
+
+            for (date, by_user) in date_counts {
+                let mut by_user = by_user.into_iter().collect::<Vec<_>>();
+                by_user.sort_by_key(|(id, ((new_follower_count, _), (_, _)))| {
+                    Reverse((*new_follower_count, *id))
+                });
+
+                for (
+                    id,
+                    (
+                        (new_follower_count, total_follower_count),
+                        (new_followed_count, total_followed_count),
+                    ),
+                ) in by_user.iter().take(count)
+                {
+                    println!(
+                        "{},{},{},{},{},{}",
+                        date,
+                        id,
+                        new_follower_count,
+                        total_follower_count,
+                        new_followed_count,
+                        total_followed_count
+                    );
+                }
             }
         }
         Command::Dump => {
@@ -56,12 +105,25 @@ fn main() -> Result<(), Error> {
                 );
             }
         }
+        Command::ExportFollowers { id } => {
+            for id in store.user_followers(id).unwrap_or_default() {
+                println!("{}", id);
+            }
+        }
+        Command::ExportFollowing { id } => {
+            for id in store.user_following(id).unwrap_or_default() {
+                println!("{}", id);
+            }
+        }
         Command::IdsSince {
             deactivations,
             timestamp,
         } => {
             let mut ids = HashSet::new();
-            let beginning = Utc.timestamp(timestamp, 0);
+            let beginning = Utc
+                .timestamp_opt(timestamp, 0)
+                .single()
+                .ok_or(Error::InvalidTimestamp(timestamp))?;
             let log = match deactivations {
                 Some(path) => DeactivationLog::read(File::open(path)?)?,
                 None => DeactivationLog::default(),
@@ -133,6 +195,8 @@ pub enum Error {
     Deactivations(#[from] hst_deactivations::Error),
     #[error("Log initialization error")]
     LogInitialization(#[from] log::SetLoggerError),
+    #[error("Invalid timestamp")]
+    InvalidTimestamp(i64),
 }
 
 #[derive(Debug, Parser)]
@@ -153,6 +217,12 @@ enum Command {
     Validate,
     BatchInfo,
     Dump,
+    ExportFollowers {
+        id: u64,
+    },
+    ExportFollowing {
+        id: u64,
+    },
     IdsSince {
         /// Deactivations file path
         #[clap(long)]
@@ -161,6 +231,13 @@ enum Command {
         timestamp: i64,
     },
     Scores,
+    ByUser,
+    TimeScores {
+        #[clap(long, default_value = "1")]
+        window: u8,
+        #[clap(long, default_value = "10")]
+        count: usize,
+    },
     ConvertLegacy {
         /// Input data directory path
         #[clap(long)]
