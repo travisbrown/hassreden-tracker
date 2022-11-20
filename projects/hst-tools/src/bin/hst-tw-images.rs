@@ -34,7 +34,7 @@ async fn download_image<P: AsRef<Path>>(
 
     if !bytes.is_empty() {
         if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(&parent)?;
+            std::fs::create_dir_all(parent)?;
         }
 
         let mut file = File::create(path)?;

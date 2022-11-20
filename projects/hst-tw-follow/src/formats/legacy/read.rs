@@ -199,10 +199,9 @@ fn read_gz<R: Read>(reader: &mut R) -> Result<Vec<u64>, Error> {
 }
 
 fn parse_timestamp_s(input: &str) -> Result<DateTime<Utc>, Error> {
-    Ok(Utc.timestamp(
-        input
-            .parse::<i64>()
-            .map_err(|_| Error::InvalidTimestamp(input.to_string()))?,
-        0,
-    ))
+    input
+        .parse::<i64>()
+        .ok()
+        .and_then(|timestamp_s| Utc.timestamp_opt(timestamp_s, 0).single())
+        .ok_or_else(|| Error::InvalidTimestamp(input.to_string()))
 }

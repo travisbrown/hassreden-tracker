@@ -1,5 +1,5 @@
 use chrono::{DateTime, Duration, TimeZone, Utc};
-use rusqlite::types::{FromSql, FromSqlResult, ToSql, ToSqlOutput, Value, ValueRef};
+use rusqlite::types::{FromSql, FromSqlError, FromSqlResult, ToSql, ToSqlOutput, Value, ValueRef};
 use rusqlite::Result;
 
 pub(crate) struct SQLiteId(pub(crate) u64);
@@ -29,8 +29,11 @@ impl ToSql for SQLiteUtc {
 impl FromSql for SQLiteUtc {
     fn column_result(value: ValueRef<'_>) -> FromSqlResult<Self> {
         let timestamp: i64 = FromSql::column_result(value)?;
-
-        Ok(SQLiteUtc(Utc.timestamp(timestamp, 0)))
+        let utc = Utc
+            .timestamp_opt(timestamp, 0)
+            .single()
+            .ok_or(FromSqlError::InvalidType)?;
+        Ok(SQLiteUtc(utc))
     }
 }
 

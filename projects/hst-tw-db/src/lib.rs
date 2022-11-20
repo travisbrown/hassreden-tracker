@@ -28,6 +28,8 @@ pub enum Error {
     InvalidTimestampBytes(Vec<u8>),
     #[error("Invalid timestamp")]
     InvalidTimestamp(DateTime<Utc>),
+    #[error("Invalid timestamp seconds")]
+    InvalidTimestampSeconds(i64),
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -193,7 +195,7 @@ impl<M: table::Mode> ProfileDb<M> {
 
 impl ProfileDb<table::Writeable> {
     pub fn update(&self, user: &User) -> Result<(), Error> {
-        let key = pair_to_key(user.id(), Utc.timestamp(user.snapshot, 0))?;
+        let key = pair_to_key(user.id(), user.snapshot())?;
         let avro_value = to_value(user)?;
         let bytes = to_avro_datum(&USER_SCHEMA, avro_value)?;
         Ok(self.db.put(key, bytes)?)
@@ -224,8 +226,13 @@ fn key_to_pair(key: &[u8]) -> Result<(u64, DateTime<Utc>), Error> {
             .try_into()
             .map_err(|_| Error::InvalidKeyBytes(key.to_vec()))?,
     );
+    let timestamp_s = (u32::MAX - snapshot) as i64;
+    let timestamp = Utc
+        .timestamp_opt(timestamp_s, 0)
+        .single()
+        .ok_or(Error::InvalidTimestampSeconds(timestamp_s))?;
 
-    Ok((user_id, Utc.timestamp((u32::MAX - snapshot) as i64, 0)))
+    Ok((user_id, timestamp))
 }
 
 fn user_id_from_key(key: &[u8]) -> Result<u64, Error> {

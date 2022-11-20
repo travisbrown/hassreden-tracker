@@ -228,7 +228,7 @@ impl DeactivationLog {
             let observed = fields
                 .get(2)
                 .and_then(|value| value.parse::<i64>().ok())
-                .map(|value| Utc.timestamp(value, 0))
+                .and_then(|value| Utc.timestamp_opt(value, 0).single())
                 .ok_or_else(|| {
                     Error::InvalidTimestamp(fields.get(2).map(|value| value.to_string()))
                 })?;
@@ -242,7 +242,7 @@ impl DeactivationLog {
                         value
                             .parse::<i64>()
                             .ok()
-                            .map(|value| Some(Utc.timestamp(value, 0)))
+                            .map(|value| Utc.timestamp_opt(value, 0).single())
                     }
                 })
                 .ok_or_else(|| {

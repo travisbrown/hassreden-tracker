@@ -235,19 +235,24 @@ impl ProfileAgeDb {
             .filter_map(|result| {
                 result.map_or_else(
                     |error| Some(Err(error)),
-                    |value|
-                        value.and_then(|(key, id, last, started)|
-                            // Ignore old last snapshots.
-                            if last.filter(|last| now - *last < min_age).is_some() {
-                                // The last snapshot is too new.
-                                None
-                            } else if started.filter(|started| now - *started < min_running).is_some() {
-                                // The current run is too new.
+                    |value| {
+                        value.and_then(|(key, id, last, started)| {
+                            // The last snapshot is too new.
+                            let snapshot_too_new =
+                                last.filter(|last| now - *last < min_age).is_some();
+
+                            // The current run is too new.
+                            let current_too_new = started
+                                .filter(|started| now - *started < min_running)
+                                .is_some();
+
+                            if snapshot_too_new || current_too_new {
                                 None
                             } else {
                                 Some(Ok((key, id, last)))
                             }
-                        )
+                        })
+                    },
                 )
             })
             .take(count)
@@ -435,6 +440,6 @@ fn timestamp_from_u32(value: u32) -> Option<DateTime<Utc>> {
     if value == 0 {
         None
     } else {
-        Some(Utc.timestamp(value as i64, 0))
+        Utc.timestamp_opt(value as i64, 0).single()
     }
 }

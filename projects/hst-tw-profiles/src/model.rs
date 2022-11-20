@@ -74,7 +74,10 @@ impl User {
     }
 
     pub fn snapshot(&self) -> DateTime<Utc> {
-        Utc.timestamp(self.snapshot, 0)
+        // In the unexpected case that the timestamp isn't valid, return the minimum.
+        Utc.timestamp_opt(self.snapshot, 0)
+            .single()
+            .unwrap_or(DateTime::<Utc>::MIN_UTC)
     }
 
     pub fn created_at(&self) -> Result<DateTime<Utc>, chrono::ParseError> {

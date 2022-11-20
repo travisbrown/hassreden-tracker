@@ -4,7 +4,7 @@ use csv::StringRecord;
 use hst_tw_db::ProfileDb;
 use rusqlite::{params, Connection, OptionalExtension, Row};
 use std::collections::{HashMap, HashSet};
-use std::io::{Read, Write};
+use std::io::Write;
 use std::path::Path;
 use std::sync::{Arc, RwLock};
 
@@ -76,11 +76,9 @@ impl TryFrom<&StringRecord> for TrackedUser {
             let blocks = record[5]
                 .split(';')
                 .map(|id_str| {
-                    Ok::<_, Error>(
-                        id_str
-                            .parse::<u64>()
-                            .map_err(|_| Error::CsvRecord(record.clone()))?,
-                    )
+                    id_str
+                        .parse::<u64>()
+                        .map_err(|_| Error::CsvRecord(record.clone()))
                 })
                 .collect::<Result<Vec<_>, _>>()?
                 .into_iter()
