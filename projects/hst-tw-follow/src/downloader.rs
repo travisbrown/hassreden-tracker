@@ -2,12 +2,13 @@ use crate::age::ProfileAgeDb;
 use chrono::{DateTime, Duration, SubsecRound, Utc};
 use egg_mode::user::UserID;
 use egg_mode_extras::client::{Client, TokenType};
+use flate2::{write::GzEncoder, Compression};
 use futures::stream::TryStreamExt;
 use hst_deactivations::file::DeactivationFile;
 use serde_json::Value;
 use std::collections::{HashMap, HashSet};
 use std::fs::File;
-use std::io::{BufWriter, Write};
+use std::io::Write;
 use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration as StdDuration;
@@ -127,12 +128,14 @@ impl Downloader {
 
         if profiles_len > 0 {
             let timestamp_ms = Utc::now().timestamp_millis();
-            let file = File::create(self.base.join(format!("{}.ndjson", timestamp_ms)))?;
-            let mut writer = BufWriter::new(file);
+            let file = File::create(self.base.join(format!("{}.ndjson.gz", timestamp_ms)))?;
+            let mut writer = GzEncoder::new(file, Compression::default());
 
             for (_, _, profile) in profiles {
                 writeln!(writer, "{}", profile)?;
             }
+
+            writer.try_finish()?;
         }
 
         Ok((deactivations_len, profiles_len))
