@@ -10,9 +10,11 @@ use std::fs::File;
 use std::io::{BufWriter, Write};
 use std::path::Path;
 use std::sync::Arc;
+use std::time::Duration as StdDuration;
 
 const MIN_AGE_S: i64 = 6 * 60 * 60;
 const MIN_RUNNING_S: i64 = 25 * 60;
+const TIMEOUT_S: u64 = 20 * 60;
 
 #[derive(thiserror::Error, Debug)]
 pub enum Error {
@@ -32,6 +34,8 @@ pub enum Error {
     InvalidProfileJson(Value),
     #[error("Unexpected user ID")]
     UnexpectedUserId(UserID),
+    #[error("Timeout")]
+    Timeout(#[from] tokio::time::error::Elapsed),
 }
 
 pub struct Downloader {
@@ -70,12 +74,14 @@ impl Downloader {
             Duration::seconds(MIN_RUNNING_S),
         )?;
 
-        let results = self
-            .twitter_client
-            .lookup_users_json_or_status(ids.into_iter(), token_type)
-            .map_err(Error::from)
-            .try_collect::<Vec<_>>()
-            .await?;
+        let results = tokio::time::timeout(
+            StdDuration::from_secs(TIMEOUT_S),
+            self.twitter_client
+                .lookup_users_json_or_status(ids.into_iter(), token_type)
+                .map_err(Error::from)
+                .try_collect::<Vec<_>>(),
+        )
+        .await??;
 
         let mut profiles = Vec::with_capacity(count);
         let mut deactivations = HashMap::new();
