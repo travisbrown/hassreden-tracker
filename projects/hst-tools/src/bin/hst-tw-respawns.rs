@@ -4,6 +4,7 @@ use hst_tw_db::{table::ReadOnly, ProfileDb};
 use hst_tw_profiles::model::User;
 use std::collections::HashMap;
 use std::fs::File;
+use std::io::BufRead;
 
 #[derive(thiserror::Error, Debug)]
 pub enum Error {
@@ -41,7 +42,7 @@ async fn main() -> Result<(), Error> {
             let db = ProfileDb::<ReadOnly>::open(db, true)?;
             let deactivations =
                 hst_deactivations::DeactivationLog::read(File::open(deactivations)?)?;
-            let lines = std::io::stdin().lines();
+            let lines = std::io::stdin().lock().lines();
             let mut by_date =
                 HashMap::<NaiveDate, Vec<(u64, Option<User>, Option<u32>, usize)>>::new();
             log::info!("Parsing stdin");

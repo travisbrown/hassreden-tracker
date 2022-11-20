@@ -34,7 +34,7 @@ fn main() -> Result<(), Error> {
             }
         }
         Command::LookupAll => {
-            let lines = std::io::stdin().lines();
+            let lines = std::io::stdin().lock().lines();
             let db = ProfileDb::<ReadOnly>::open(opts.db, true)?;
 
             for line in lines {
@@ -49,7 +49,7 @@ fn main() -> Result<(), Error> {
             }
         }
         Command::LookupAllJson => {
-            let lines = std::io::stdin().lines();
+            let lines = std::io::stdin().lock().lines();
             let db = ProfileDb::<ReadOnly>::open(opts.db, true)?;
 
             for line in lines {
