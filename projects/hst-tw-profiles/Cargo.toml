@@ -14,6 +14,7 @@ edition = "2021"
 apache-avro = { version = "0.14", features = ["snappy"] }
 bzip2 = "0.4"
 chrono = "0.4"
+flate2 = "1"
 hst-tw-utils = { path = "../hst-tw-utils", version = "0.2.0" }
 lazy_static = "1.4"
 serde = { version = "1", features = ["derive"] }
@@ -22,3 +23,4 @@ serde_json = { version = "1", features = ["preserve_order"] }
 tar = "0.4"
 thiserror = "1"
 zip = { version = "0.6", default-features = false, features = ["bzip2", "deflate"] }
+zstd = "0.11"

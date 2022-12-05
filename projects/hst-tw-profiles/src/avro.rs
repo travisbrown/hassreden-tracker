@@ -8,8 +8,8 @@ pub fn writer<W: Write>(writer: W) -> Writer<'static, W> {
     Writer::with_codec(&USER_SCHEMA, writer, Codec::Snappy)
 }
 
-pub fn reader<R: Read>(reader: R) -> Result<Reader<'static, R>, Error> {
-    Ok(Reader::with_schema(&USER_SCHEMA, reader)?)
+pub fn reader<R: Read>(reader: R) -> Result<Reader<'static, R>, apache_avro::Error> {
+    Reader::with_schema(&USER_SCHEMA, reader)
 }
 
 pub fn validate<R: Read>(reader: Reader<'static, R>) -> Result<usize, ValidationError> {

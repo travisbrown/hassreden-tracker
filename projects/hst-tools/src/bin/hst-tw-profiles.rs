@@ -4,7 +4,7 @@ use futures::{
     stream::{StreamExt, TryStreamExt},
 };
 use hst_cli::prelude::*;
-use hst_tw_profiles::model::User;
+use hst_tw_profiles::{model::User, ProfileReader};
 use regex::Regex;
 use std::collections::HashSet;
 use std::fs::File;
@@ -17,6 +17,8 @@ pub enum Error {
     Io(#[from] std::io::Error),
     #[error("JSON error")]
     Json(#[from] serde_json::Error),
+    #[error("Profile error")]
+    Profile(#[from] hst_tw_profiles::Error),
     #[error("Invalid file path")]
     InvalidPath(Box<Path>),
     #[error("Log initialization error")]
@@ -54,6 +56,14 @@ async fn main() -> Result<(), Error> {
                 })
                 .await?;
         }
+        Command::Dump { path } => {
+            let reader = ProfileReader::open(path);
+
+            for user in reader {
+                let user = user?;
+                println!("{}", serde_json::json!(user));
+            }
+        }
     }
 
     Ok(())
@@ -78,6 +88,10 @@ enum Command {
         /// File name filter
         #[clap(long)]
         filter: Option<Regex>,
+    },
+    Dump {
+        /// File path
+        path: String,
     },
 }
 
