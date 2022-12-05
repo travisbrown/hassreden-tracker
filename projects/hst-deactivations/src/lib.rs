@@ -145,7 +145,7 @@ impl DeactivationLog {
                 .and_then(|entries| entries.last_mut())
             {
                 Some(last) => {
-                    if last.reversal.is_none() {
+                    if last.reversal.is_none() || timestamp < last.reversal.unwrap() {
                         last.reversal = Some(timestamp);
                     } else {
                         invalid_pairs.push((user_id, timestamp));
