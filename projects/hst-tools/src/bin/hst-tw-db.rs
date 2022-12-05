@@ -1,3 +1,4 @@
+use chrono::{DateTime, TimeZone, Utc};
 use hst_cli::prelude::*;
 use hst_deactivations::DeactivationLog;
 use hst_tw_db::{
@@ -5,9 +6,11 @@ use hst_tw_db::{
     ProfileDb,
 };
 use hst_tw_profiles::model::User;
-use std::collections::HashSet;
+use itertools::Itertools;
+use std::collections::{HashMap, HashSet};
 use std::fs::File;
 use std::io::{BufRead, BufReader};
+use std::path::Path;
 
 fn main() -> Result<(), Error> {
     let opts: Opts = Opts::parse();
@@ -17,12 +20,22 @@ fn main() -> Result<(), Error> {
         Command::Import { input } => {
             let db = ProfileDb::<Writeable>::open(opts.db, false)?;
 
-            let reader = BufReader::new(zstd::stream::read::Decoder::new(File::open(input)?)?);
+            if input.ends_with("zst") {
+                let reader = BufReader::new(zstd::stream::read::Decoder::new(File::open(input)?)?);
 
-            for line in reader.lines() {
-                let line = line?;
-                let profile: User = serde_json::from_str(&line)?;
-                db.update(&profile)?;
+                for line in reader.lines() {
+                    let line = line?;
+                    let profile: User = serde_json::from_str(&line)?;
+                    db.update(&profile)?;
+                }
+            } else {
+                let reader = BufReader::new(File::open(input)?);
+
+                for line in reader.lines() {
+                    let line = line?;
+                    let profile: User = serde_json::from_str(&line)?;
+                    db.update(&profile)?;
+                }
             }
         }
         Command::Lookup { id } => {
@@ -48,7 +61,7 @@ fn main() -> Result<(), Error> {
                 }
             }
         }
-        Command::LookupAllJson => {
+        Command::LookupAllJson { earliest } => {
             let lines = std::io::stdin().lock().lines();
             let db = ProfileDb::<ReadOnly>::open(opts.db, true)?;
 
@@ -56,7 +69,11 @@ fn main() -> Result<(), Error> {
                 let line = line?;
                 let id = line.parse::<u64>().unwrap();
                 let users = db.lookup(id)?;
-                if let Some((_, user)) = users.first() {
+                if let Some((_, user)) = if earliest {
+                    users.last()
+                } else {
+                    users.first()
+                } {
                     println!("{}", serde_json::json!(user));
                 }
             }
@@ -172,21 +189,115 @@ fn main() -> Result<(), Error> {
         Command::CheckReversals { deactivations } => {
             let db = ProfileDb::<ReadOnly>::open(opts.db, true)?;
             let mut deactivations = DeactivationLog::read(File::open(deactivations)?)?;
-            let deactivated_ids = deactivations.current_deactivated(None);
+            let mut deactivated_ids = deactivations
+                .current_deactivated(None)
+                .into_iter()
+                .collect::<Vec<_>>();
+            deactivated_ids.sort();
             let mut reversals = vec![];
 
-            for result in db.iter() {
-                let (id, users) = result?;
+            for id in deactivated_ids {
+                let users = db.lookup(id)?;
+                if let Some(deactivation_time) = deactivations.status_timestamp(id) {
+                    if let Some((snapshot, user)) = users
+                        .iter()
+                        .rev()
+                        .find(|(snapshot, _)| *snapshot > deactivation_time)
+                    {
+                        log::info!("{},{}", user.id, snapshot);
+                        reversals.push((user.id(), *snapshot));
+                    }
+                }
+            }
 
-                if deactivated_ids.contains(&id) {
-                    if let Some(deactivation_time) = deactivations.status_timestamp(id) {
-                        if let Some((snapshot, user)) = users
-                            .iter()
-                            .rev()
-                            .find(|(snapshot, _)| *snapshot > deactivation_time)
-                        {
-                            log::info!("{},{}", user.id, snapshot);
-                            reversals.push((user.id(), *snapshot));
+            if let Err(update_errors) = deactivations.update_with_reversals(reversals.into_iter()) {
+                log::error!("{} update errors", update_errors.len());
+            }
+            deactivations.write(std::io::stdout())?;
+        }
+        Command::CheckOldReversals {
+            candidates,
+            tweets,
+            beginning,
+        } => {
+            let db = ProfileDb::<ReadOnly>::open(opts.db, true)?;
+
+            // When old suspensions were last updated (2021-11-19).
+            let last_update = Utc.timestamp_opt(1637280000, 0).unwrap();
+            let beginning = match beginning {
+                Some(beginning) => Utc
+                    .timestamp_opt(beginning, 0)
+                    .single()
+                    .ok_or_else(|| Error::Format(beginning.to_string()))?,
+                None => last_update,
+            };
+
+            let candidates_reader = BufReader::new(File::open(candidates)?);
+            let mut candidates = candidates_reader
+                .lines()
+                .map(|line| {
+                    let line = line.map_err(Error::from)?;
+                    line.parse::<u64>().map_err(|_| Error::Format(line))
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+            candidates.sort_unstable();
+
+            let tweet_timestamps = tweet_timestamps(tweets, Some(last_update))?;
+
+            for id in candidates {
+                let users = db.lookup(id)?;
+                // The users are in reverse order.
+                if let Some(((first_timestamp, _), (_, last_snapshot))) =
+                    users.last().zip(users.first())
+                {
+                    let first_tweet_timestamp = tweet_timestamps
+                        .get(&id)
+                        .and_then(|timestamps| timestamps.first())
+                        .filter(|timestamp| *timestamp < first_timestamp);
+
+                    let reversal_observed = first_tweet_timestamp.unwrap_or(first_timestamp);
+
+                    if *reversal_observed > beginning {
+                        println!(
+                            "{},{},{},{}",
+                            last_snapshot.id,
+                            last_snapshot.screen_name,
+                            last_snapshot.followers_count,
+                            reversal_observed.timestamp()
+                        );
+                    }
+                }
+            }
+        }
+        Command::CheckTweets {
+            deactivations,
+            tweets,
+        } => {
+            let mut deactivations = DeactivationLog::read(File::open(deactivations)?)?;
+            let mut deactivated_ids = deactivations
+                .ever_deactivated(None)
+                .into_iter()
+                .collect::<Vec<_>>();
+            deactivated_ids.sort();
+            let mut reversals = vec![];
+
+            let tweet_timestamps = tweet_timestamps(tweets, None)?;
+
+            for id in deactivated_ids {
+                if let Some(entries) = deactivations.lookup(id) {
+                    if let Some(timestamps) = tweet_timestamps.get(&id) {
+                        for entry in entries {
+                            //if entry.status == 63 {
+                            if let Some(reversal) = entry.reversal {
+                                for timestamp in timestamps {
+                                    if *timestamp > entry.observed && *timestamp < reversal {
+                                        log::info!("{}", timestamp);
+                                        reversals.push((id, *timestamp));
+                                        break;
+                                    }
+                                }
+                            }
+                            //}
                         }
                     }
                 }
@@ -195,6 +306,36 @@ fn main() -> Result<(), Error> {
             if let Err(update_errors) = deactivations.update_with_reversals(reversals.into_iter()) {
                 log::error!("{} update errors", update_errors.len());
             }
+            deactivations.write(std::io::stdout())?;
+        }
+        Command::Validate { deactivations } => {
+            let deactivations = DeactivationLog::read(File::open(deactivations)?)?;
+            if let Err(errors) = deactivations.validate() {
+                for error in errors {
+                    println!("{}", error);
+                }
+            }
+        }
+        Command::ValidateDup { deactivations } => {
+            let deactivations = DeactivationLog::read(File::open(deactivations)?)?;
+            if let Err(errors) = deactivations.validate() {
+                for error in errors {
+                    if let Some(entries) = deactivations.lookup(error) {
+                        let revs = entries
+                            .iter()
+                            .filter_map(|entry| entry.reversal)
+                            .collect::<Vec<_>>();
+                        let uniq = revs.iter().collect::<HashSet<_>>();
+                        if revs.len() > uniq.len() {
+                            println!("{}", error);
+                        }
+                    }
+                }
+            }
+        }
+        Command::Fix { deactivations } => {
+            let mut deactivations = DeactivationLog::read(File::open(deactivations)?)?;
+            deactivations.fix();
             deactivations.write(std::io::stdout())?;
         }
     }
@@ -218,6 +359,8 @@ pub enum Error {
     Io(#[from] std::io::Error),
     #[error("CSV error")]
     Csv(#[from] csv::Error),
+    #[error("Format error")]
+    Format(String),
     #[error("Log initialization error")]
     LogInitialization(#[from] log::SetLoggerError),
 }
@@ -246,7 +389,11 @@ enum Command {
         id: u64,
     },
     LookupAll,
-    LookupAllJson,
+    LookupAllJson {
+        /// Get earliest snapshot (default is latest)
+        #[clap(long)]
+        earliest: bool,
+    },
     Count,
     Stats,
     Ids,
@@ -254,8 +401,82 @@ enum Command {
         query: String,
     },
     CheckReversals {
-        /// Avro input path
+        /// Deactivations file input path
         #[clap(short, long)]
         deactivations: String,
     },
+    CheckOldReversals {
+        /// Candidates input path (one ID per line)
+        #[clap(long)]
+        candidates: String,
+        /// Tweets input path (user ID, status ID, timestamp)
+        #[clap(long)]
+        tweets: String,
+        /// Timestamp to begin filtering at
+        #[clap(long)]
+        beginning: Option<i64>,
+    },
+    CheckTweets {
+        /// Deactivations file input path
+        #[clap(short, long)]
+        deactivations: String,
+        /// Tweets input path (user ID, status ID, timestamp)
+        #[clap(long)]
+        tweets: String,
+    },
+    Validate {
+        /// Deactivations file input path
+        #[clap(short, long)]
+        deactivations: String,
+    },
+    ValidateDup {
+        /// Deactivations file input path
+        #[clap(short, long)]
+        deactivations: String,
+    },
+    Fix {
+        /// Deactivations file input path
+        #[clap(short, long)]
+        deactivations: String,
+    },
+}
+
+fn tweet_timestamps<P: AsRef<Path>>(
+    path: P,
+    last_update: Option<DateTime<Utc>>,
+) -> Result<HashMap<u64, Vec<DateTime<Utc>>>, Error> {
+    let tweets_reader = BufReader::new(File::open(path)?);
+    let tweets = tweets_reader
+        .lines()
+        .map(|line| {
+            let line = line.map_err(Error::from)?;
+            let parts = line.split(',').collect::<Vec<_>>();
+            let user_id = parts[0]
+                .parse::<u64>()
+                .map_err(|_| Error::Format(line.to_string()))?;
+            let timestamp = parts[2]
+                .parse::<i64>()
+                .map_err(|_| Error::Format(line.to_string()))?;
+            let timestamp = Utc
+                .timestamp_opt(timestamp, 0)
+                .single()
+                .ok_or_else(|| Error::Format(line.to_string()))?;
+
+            Ok::<_, Error>((user_id, timestamp))
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+
+    let mut tweet_timestamps = HashMap::new();
+    for (user_id, timestamps) in &tweets.into_iter().group_by(|(user_id, _)| *user_id) {
+        let mut timestamps = timestamps
+            .map(|(_, timestamp)| timestamp)
+            .collect::<Vec<_>>();
+        if let Some(last_update) = last_update {
+            timestamps.retain(|timestamp| *timestamp > last_update);
+        }
+        timestamps.sort_unstable();
+        tweet_timestamps.insert(user_id, timestamps);
+    }
+
+    Ok(tweet_timestamps)
 }
