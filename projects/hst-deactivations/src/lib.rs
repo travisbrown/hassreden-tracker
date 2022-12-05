@@ -186,6 +186,20 @@ impl DeactivationLog {
         }
     }
 
+    pub fn fix(&mut self) {
+        for (user_id, entries) in self.entries.iter_mut() {
+            if !Self::validate_entries(entries) {
+                if entries[0].reversal.is_none()
+                    && entries[1..].iter().all(|entry| entry.reversal.is_some())
+                {
+                    entries.truncate(2);
+                    entries[0].reversal = entries[1].reversal;
+                    entries[1].reversal = None;
+                }
+            }
+        }
+    }
+
     fn validate_entries(entries: &[Entry]) -> bool {
         let valid_pairs = entries.windows(2).all(|pair| match pair[0].reversal {
             Some(reversal) => pair[0].observed < reversal && pair[0].observed < pair[1].observed,
