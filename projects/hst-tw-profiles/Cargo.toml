@@ -23,4 +23,4 @@ serde_json = { version = "1", features = ["preserve_order"] }
 tar = "0.4"
 thiserror = "1"
 zip = { version = "0.6", default-features = false, features = ["bzip2", "deflate"] }
-zstd = "0.11"
+zstd = "0.12"
