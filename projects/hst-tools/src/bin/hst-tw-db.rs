@@ -114,6 +114,23 @@ fn main() -> Result<(), Error> {
             );
             println!("{} verified, {} protected", verified, protected);
         }
+        Command::CountByDate => {
+            let db = ProfileDb::<ReadOnly>::open(opts.db, true)?;
+            let mut by_date = HashMap::<_, usize>::new();
+            for result in db.iter() {
+                let (_, users) = result?;
+                for (snapshot, _) in &users {
+                    let count = by_date.entry(snapshot.date_naive()).or_default();
+                    *count += 1;
+                }
+            }
+            let mut by_date_sorted = by_date.into_iter().collect::<Vec<_>>();
+            by_date_sorted.sort();
+
+            for (date, count) in by_date_sorted {
+                println!("{},{}", date, count);
+            }
+        }
         Command::Stats => {
             let db = ProfileDb::<ReadOnly>::open(opts.db, true)?;
             if let Some(count) = db.get_estimated_key_count()? {
@@ -395,6 +412,7 @@ enum Command {
         earliest: bool,
     },
     Count,
+    CountByDate,
     Stats,
     Ids,
     DisplayNameSearch {
