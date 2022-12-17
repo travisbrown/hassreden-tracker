@@ -94,7 +94,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     by_date.sort_by_key(|(date, _)| Reverse(*date));
 
-    let mut report_file = File::create(opts.report)?;
+    let total_count: usize = by_date.iter().map(|(_, reversals)| reversals.len()).sum();
+
+    let report_dir = Path::new(&opts.report);
+    let mut report_file = File::create(report_dir.join("README.md"))?;
 
     //writeln!(report_file, "# Elon Musk's suspension reversals")?;
     //writeln!(report_file, "The tables below show notable Twitter suspension reversals for each day since Elon Musk took over as owner and CEO.\n")?;
@@ -103,18 +106,28 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     //writeln!(report_file, "In some cases we do not have suspension detection dates (these are accounts that are known to have been suspended before February 2022).\n")?;
 
     writeln!(report_file, "## Table of contents")?;
+    writeln!(
+        report_file,
+        "Total number of Twitter suspension reversals included here: {}.\n",
+        total_count
+    )?;
+    writeln!(report_file, "Please see the project [README](https://github.com/travisbrown/unsuspensions) for a detailed description of the report format and methodology.")?;
 
     for (date, reversals) in &by_date {
         writeln!(
             report_file,
-            "* [{}](#{}) ({})",
+            "* [{}]({}) ({})",
             date.format("%d %B %Y"),
-            date.format("%d-%B-%Y"),
+            date.format("%Y-%m-%d/"),
             reversals.len()
         )?;
     }
 
     for (date, reversals) in by_date {
+        let day_dir = report_dir.join(format!("{}", date.format("%Y-%m-%d")));
+        std::fs::create_dir(&day_dir)?;
+
+        let mut report_file = File::create(day_dir.join("README.md"))?;
         writeln!(report_file, "\n## {}", date.format("%d %B %Y"))?;
 
         let mut users = reversals
@@ -136,7 +149,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         writeln!(
             report_file,
-            "Total suspension reversals observed: {}",
+            "Total number of suspension reversals observed: {}.",
             users.len()
         )?;
 
@@ -179,7 +192,7 @@ struct Opts {
     #[clap(long)]
     worst: String,
     /// Report output file
-    #[clap(long, default_value = "report.md")]
+    #[clap(long, default_value = "report/")]
     report: String,
     /// Timestamp output file
     #[clap(long, default_value = "timestamps.csv")]
