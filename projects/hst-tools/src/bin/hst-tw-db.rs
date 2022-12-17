@@ -355,6 +355,26 @@ fn main() -> Result<(), Error> {
             deactivations.fix();
             deactivations.write(std::io::stdout())?;
         }
+        Command::ExtractTweetInfo { input } => {
+            let reader = BufReader::new(File::open(input)?);
+
+            for line in reader.lines() {
+                let line = line?;
+                let json: serde_json::Value = serde_json::from_str(&line)?;
+                let id = json.get("id").unwrap().as_u64().unwrap();
+                let user_id = json
+                    .get("user")
+                    .unwrap()
+                    .get("id")
+                    .unwrap()
+                    .as_u64()
+                    .unwrap();
+                let date = json.get("created_at").unwrap().as_str().unwrap();
+                let ts = hst_tw_utils::parse_date_time(date).unwrap();
+
+                println!("{},{},{}", user_id, id, ts.timestamp());
+            }
+        }
     }
 
     Ok(())
@@ -456,6 +476,11 @@ enum Command {
         /// Deactivations file input path
         #[clap(short, long)]
         deactivations: String,
+    },
+    ExtractTweetInfo {
+        /// Tweet JSON file input path
+        #[clap(short, long)]
+        input: String,
     },
 }
 
