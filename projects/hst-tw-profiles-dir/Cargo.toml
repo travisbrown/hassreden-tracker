@@ -1,0 +1,19 @@
+[package]
+name = "hst-tw-profiles-dir"
+authors = ["Travis Brown <travisrobertbrown@gmail.com>"]
+homepage = "https://github.com/travisbrown/hassreden-tracker"
+repository = "https://github.com/travisbrown/hassreden-tracker"
+description = "Library for working with Twitter profiles"
+keywords = ["twitter"]
+license-file = "../../LICENSE"
+readme = "../../README.md"
+version = "0.2.0"
+edition = "2021"
+
+[dependencies]
+chrono = "0.4"
+lazy_static = "1.4"
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["preserve_order"] }
+thiserror = "1"
+zstd = "0.12"

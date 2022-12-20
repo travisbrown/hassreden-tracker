@@ -21,6 +21,7 @@ hst-deactivations = { path = "../hst-deactivations" }
 hst-tw-db = { path = "../hst-tw-db" }
 hst-tw-images = { path = "../hst-tw-images" }
 hst-tw-profiles = { path = "../hst-tw-profiles" }
+hst-tw-profiles-dir = { path = "../hst-tw-profiles-dir" }
 hst-tw-utils = { path = "../hst-tw-utils" }
 itertools = "0.10"
 regex = "1"

@@ -8,5 +8,6 @@ members = [
     "hst-tw-follow",
     "hst-tw-images",
     "hst-tw-profiles",
+    "hst-tw-profiles-dir",
     "hst-tw-utils"
 ]
