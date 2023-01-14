@@ -58,6 +58,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
             for value in dir.profiles(None, None) {
                 let value = value?;
+
                 let id = value
                     .get("id_str")
                     .and_then(|id_value| id_value.as_str())
