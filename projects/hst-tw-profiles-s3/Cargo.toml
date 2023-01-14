@@ -1,0 +1,32 @@
+[package]
+name = "hst-tw-profiles-s3"
+authors = ["Travis Brown <travisrobertbrown@gmail.com>"]
+homepage = "https://github.com/travisbrown/hassreden-tracker"
+repository = "https://github.com/travisbrown/hassreden-tracker"
+description = "Library for working with Twitter profiles in AWS S3"
+keywords = ["twitter"]
+license-file = "../../LICENSE"
+readme = "../../README.md"
+version = "0.2.0"
+edition = "2021"
+
+[dependencies]
+aws-creds = "0.30"
+aws-region = "0.25"
+chrono = "0.4"
+crc = "3"
+futures = "0.3"
+hex = "0.4"
+hst-cli = { path = "../hst-cli" }
+lazy_static = "1.4"
+memchr = "2"
+pin-project-lite = "0.2"
+rust-s3 = "0.32"
+serde = { version = "1", features = ["derive"] }
+serde_derive = "1"
+serde_json = { version = "1", features = ["preserve_order"] }
+sha2 = "0.10"
+thiserror = "1"
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+toml = "0.5"
+zstd = "0.12"
