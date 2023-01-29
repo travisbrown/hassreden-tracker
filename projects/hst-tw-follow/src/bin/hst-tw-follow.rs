@@ -44,7 +44,7 @@ async fn main() -> Result<(), Error> {
                 TokenType::App
             };
             let info = session.scrape(token_type, id, None).await?;
-            println!("{:?}", info);
+            println!("{info:?}");
         }
         Command::ValidateTrackedDb => {
             let (store_only_ids, tracked_db_only_ids) = session.compare_users()?;
@@ -83,8 +83,7 @@ async fn main() -> Result<(), Error> {
 
             for (id, next, last, started) in items {
                 println!(
-                    "{},{},{},{}",
-                    id,
+                    "{id},{},{},{}",
                     next.map(|value| value.to_string()).unwrap_or_default(),
                     last.map(|value| value.to_string()).unwrap_or_default(),
                     started.map(|value| value.to_string()).unwrap_or_default(),

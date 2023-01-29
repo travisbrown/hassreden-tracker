@@ -24,7 +24,7 @@ async fn main() -> Result<(), Error> {
     let config_str = std::fs::read_to_string(opts.config)?;
     let config = toml::from_str::<Config>(&config_str)?;
     let bucket = config.bucket()?;
-    println!("{:?}", config);
+    println!("{config:?}");
 
     use std::io::Read;
 

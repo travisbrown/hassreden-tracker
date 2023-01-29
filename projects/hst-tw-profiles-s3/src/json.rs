@@ -1,5 +1,5 @@
 use serde::de::Deserialize;
-use std::io::{LineWriter, Write};
+use std::io::Write;
 
 pub trait JsonSink<'a> {
     type Item: Deserialize<'a>;
@@ -10,7 +10,10 @@ pub trait JsonSink<'a> {
 
     fn feed(&mut self, line: &'a [u8]) -> Result<(), std::io::Error> {
         match serde_json::from_slice::<Self::Item>(line) {
-            Ok(item) => Ok(self.process(item)),
+            Ok(item) => {
+                self.process(item);
+                Ok(())
+            }
             Err(error) => Err(std::io::Error::new(std::io::ErrorKind::InvalidData, error)),
         }
     }

@@ -2,7 +2,6 @@ use chrono::{DateTime, NaiveDate, TimeZone, Utc};
 use hst_cli::prelude::*;
 use hst_tw_profiles_dir::ProfilesDir;
 use hst_tw_utils::parse_date_time;
-use regex::Regex;
 use std::collections::{HashMap, HashSet};
 use std::fs::File;
 use std::io::{BufRead, BufReader};
