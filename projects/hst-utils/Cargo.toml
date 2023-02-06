@@ -1,0 +1,14 @@
+[package]
+name = "hst-utils"
+authors = ["Travis Brown <travisrobertbrown@gmail.com>"]
+homepage = "https://github.com/travisbrown/hassreden-tracker"
+repository = "https://github.com/travisbrown/hassreden-tracker"
+description = "Miscellaneous utilities"
+keywords = ["twitter"]
+license-file = "../../LICENSE"
+readme = "../../README.md"
+version = "0.2.0"
+edition = "2021"
+
+[dependencies]
+chrono = "0.4"

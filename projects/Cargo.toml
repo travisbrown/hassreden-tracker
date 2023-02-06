@@ -10,5 +10,6 @@ members = [
     "hst-tw-profiles",
     "hst-tw-profiles-dir",
     "hst-tw-profiles-s3",
-    "hst-tw-utils"
+    "hst-tw-utils",
+    "hst-utils"
 ]
