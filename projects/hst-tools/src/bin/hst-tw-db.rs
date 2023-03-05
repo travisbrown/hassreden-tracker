@@ -78,6 +78,77 @@ fn main() -> Result<(), Error> {
                 }
             }
         }
+        Command::Export => {
+            let db = ProfileDb::<ReadOnly>::open(opts.db, true)?;
+
+            for result in db.iter() {
+                let (id, users) = result?;
+                let mut screen_names = HashMap::<_, HashSet<DateTime<Utc>>>::new();
+
+                for (snapshot, user) in users {
+                    let entry = screen_names.entry(user.screen_name).or_default();
+                    entry.insert(snapshot);
+                }
+
+                let mut result = screen_names
+                    .into_iter()
+                    .map(|(screen_name, snapshots)| {
+                        let mut snapshots_sorted = snapshots.into_iter().collect::<Vec<_>>();
+                        snapshots_sorted.sort();
+
+                        (screen_name, snapshots_sorted)
+                    })
+                    .collect::<Vec<_>>();
+
+                result.sort_by_key(|(_, snapshots)| snapshots.get(0).cloned());
+
+                for (screen_name, snapshots) in result {
+                    if let Some((first, last)) = snapshots.first().zip(snapshots.last()) {
+                        println!(
+                            "{id},{screen_name},{},{}",
+                            first.timestamp(),
+                            last.timestamp()
+                        );
+                    }
+                }
+            }
+        }
+        Command::Withheld => {
+            let db = ProfileDb::<ReadOnly>::open(opts.db, true)?;
+
+            for result in db.iter() {
+                let (id, mut users) = result?;
+                users.reverse();
+                let mut lines = vec![];
+                let mut include = false;
+
+                for (withheld, group) in &users
+                    .into_iter()
+                    .group_by(|(_, user)| user.withheld_in_countries.clone())
+                {
+                    if !withheld.is_empty() {
+                        include = true;
+                    }
+                    let group = group.collect::<Vec<_>>();
+                    let first = group.first().unwrap();
+                    let last = group.last().unwrap();
+                    lines.push(format!(
+                        "{id},{},{},{},{},{}",
+                        last.1.screen_name,
+                        last.1.followers_count,
+                        withheld.join(";"),
+                        first.0.timestamp(),
+                        last.0.timestamp()
+                    ));
+                }
+
+                if include {
+                    for line in lines {
+                        println!("{line}");
+                    }
+                }
+            }
+        }
         Command::Count => {
             let db = ProfileDb::<ReadOnly>::open(opts.db, true)?;
             let mut user_count = 0;
@@ -431,6 +502,8 @@ enum Command {
         #[clap(long)]
         earliest: bool,
     },
+    Export,
+    Withheld,
     Count,
     CountByDate,
     Stats,
