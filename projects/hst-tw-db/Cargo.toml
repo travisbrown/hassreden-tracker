@@ -13,7 +13,7 @@ edition = "2021"
 [dependencies]
 apache-avro = { version = "0.14", features = ["snappy"] }
 chrono = "0.4"
-rocksdb = { version = "0.19", default-features = false, features = ["zstd"] }
+rocksdb = { version = "0.20", default-features = false, features = ["zstd"] }
 thiserror = "1"
 hst-tw-profiles = { path = "../hst-tw-profiles", version = "0.2.0" }
 hst-tw-utils = { path = "../hst-tw-utils", version = "0.2.0" }
