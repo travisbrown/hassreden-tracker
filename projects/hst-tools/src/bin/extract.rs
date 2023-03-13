@@ -22,7 +22,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
             for line in BufReader::new(File::open(seen)?).lines() {
                 let line = line?;
-                let parts = line.split(",").collect::<Vec<_>>();
+                let parts = line.split(',').collect::<Vec<_>>();
                 let user_id = parts[0].parse::<u64>().unwrap();
                 let snapshot = parts[1].parse::<i64>().unwrap();
 
@@ -36,7 +36,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let (user_id, snapshot) = extract(&value).unwrap();
                 if let Some(seen_snapshots) = seen_by_id.get(&user_id) {
                     if !seen_snapshots.contains(&snapshot) {
-                        println!("{}", value.to_string());
+                        println!("{}", value);
                     }
                 }
             }
@@ -46,7 +46,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
             for line in BufReader::new(File::open(deactivations)?).lines() {
                 let line = line?;
-                let parts = line.split(",").collect::<Vec<_>>();
+                let parts = line.split(',').collect::<Vec<_>>();
                 let user_id = parts[0].parse::<u64>().unwrap();
                 let status_code = parts[1].parse::<u32>().unwrap();
 
@@ -62,19 +62,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     .get("id_str")
                     .and_then(|id_value| id_value.as_str())
                     .and_then(|id_str| id_str.parse::<u64>().ok())
-                    .expect(&format!("Invalid ID: {}", value).to_string());
+                    .unwrap_or_else(|| panic!("Invalid ID: {}", value));
 
                 let entry = by_id.entry(id).or_default();
 
                 entry
                     .update(&value)
-                    .expect(&format!("Invalid value: {}", value).to_string());
+                    .unwrap_or_else(|| panic!("Invalid value: {}", value));
             }
 
-            let mut entries = by_id
-                .into_iter()
-                .map(|(_, entry)| entry)
-                .collect::<Vec<_>>();
+            let mut entries = by_id.into_values().collect::<Vec<_>>();
             entries.sort_by_key(|entry| entry.id);
 
             for entry in entries {

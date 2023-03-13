@@ -69,7 +69,7 @@ impl ProfilesDir {
 
     fn read_ndjson<P: AsRef<Path>>(path: P) -> Box<dyn Iterator<Item = Result<Value, Error>>> {
         match File::open(path)
-            .and_then(|file| ZstDecoder::new(file))
+            .and_then(ZstDecoder::new)
             .map_err(Error::from)
         {
             Ok(decoder) => Box::new(BufReader::new(decoder).lines().map(|line| {

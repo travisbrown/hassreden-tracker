@@ -167,7 +167,7 @@ async fn process_batch(
         .try_for_each(|result| async {
             match result {
                 Ok(mut value) => {
-                    timestamp_json(&mut value, &timestamp)?;
+                    timestamp_json(&mut value, timestamp)?;
                     println!("{}", value);
                 }
                 Err((egg_mode::user::UserID::ID(user_id), status)) => {

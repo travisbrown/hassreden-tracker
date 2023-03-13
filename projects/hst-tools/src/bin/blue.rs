@@ -13,15 +13,14 @@ enum Status {
     Deactivated,
 }
 
-impl Status {
-    fn to_string(&self) -> String {
-        match self {
+impl std::fmt::Display for Status {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
             Self::Subscribed => "B",
             Self::Unsubscribed => "U",
             Self::Suspended => "S",
             Self::Deactivated => "D",
-        }
-        .to_string()
+        })
     }
 }
 
@@ -45,14 +44,15 @@ impl Verified {
             Some(None)
         }
     }
+}
 
-    fn to_string(&self) -> String {
-        match self {
+impl std::fmt::Display for Verified {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
             Self::Business => "B",
             Self::Government => "G",
             Self::Unknown => "V",
-        }
-        .to_string()
+        })
     }
 }
 
@@ -119,7 +119,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let line = line?;
         if line.starts_with('{') {
             let json = serde_json::from_str(&line)?;
-            let record = Record::from_json(&json).expect(&format!("Invalid line {}", line));
+            let record =
+                Record::from_json(&json).unwrap_or_else(|| panic!("Invalid line {}", line));
             records.insert(record.id, record);
         } else {
             let parts = line.split(',').collect::<Vec<_>>();
@@ -200,7 +201,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .unwrap()
                 .date_naive(),
             record.first_seen_blue.unwrap(),
-            record.status.to_string()
+            record.status
         );
     }
 

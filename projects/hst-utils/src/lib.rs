@@ -10,7 +10,7 @@ pub fn dedup_unsorted<T: Eq + Hash + Copy>(values: &mut Vec<T>) -> usize {
             removed_count += 1;
             false
         } else {
-            seen.insert(value.clone());
+            seen.insert(*value);
             true
         }
     });
