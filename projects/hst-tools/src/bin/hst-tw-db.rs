@@ -446,6 +446,20 @@ fn main() -> Result<(), Error> {
                 println!("{},{},{}", user_id, id, ts.timestamp());
             }
         }
+        Command::ByFollowerCount { min } => {
+            let db = ProfileDb::<ReadOnly>::open(opts.db, true)?;
+            for result in db.latest_iter() {
+                let (_, _, user) = result?;
+                if user.followers_count >= min as i64 {
+                    println!(
+                        "{},{},{}",
+                        user.id(),
+                        user.screen_name,
+                        user.followers_count
+                    );
+                }
+            }
+        }
     }
 
     Ok(())
@@ -554,6 +568,11 @@ enum Command {
         /// Tweet JSON file input path
         #[clap(short, long)]
         input: String,
+    },
+    ByFollowerCount {
+        /// Minimum number of followers to include
+        #[clap(short, long)]
+        min: usize,
     },
 }
 

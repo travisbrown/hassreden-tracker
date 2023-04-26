@@ -33,15 +33,11 @@ enum Verified {
 
 impl Verified {
     fn from_fields(is_verified: bool, verified_type: Option<&str>) -> Option<Option<Self>> {
-        if is_verified {
-            match verified_type {
-                Some("Business") => Some(Some(Self::Business)),
-                Some("Government") => Some(Some(Self::Government)),
-                Some(_) => None,
-                None => Some(Some(Verified::Unknown)),
-            }
-        } else {
-            Some(None)
+        match verified_type {
+            Some("Business") => Some(Some(Self::Business)),
+            Some("Government") => Some(Some(Self::Government)),
+            Some(_) => None,
+            None => None,
         }
     }
 }
@@ -109,6 +105,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let opts: Opts = Opts::parse();
     opts.verbose.init_logging()?;
 
+    let mut seen = HashSet::new();
     let mut suspended = HashSet::new();
     let mut deactivated = HashSet::new();
     let mut records = HashMap::new();
@@ -121,16 +118,22 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let json = serde_json::from_str(&line)?;
             let record =
                 Record::from_json(&json).unwrap_or_else(|| panic!("Invalid line {}", line));
-            records.insert(record.id, record);
+            if !seen.contains(&record.id) {
+                seen.insert(record.id);
+                records.insert(record.id, record);
+            }
         } else {
             let parts = line.split(',').collect::<Vec<_>>();
             let id = parts[0].parse::<u64>().unwrap();
-            if parts[1] == "63" {
-                suspended.insert(id);
-            } else if parts[1] == "50" {
-                deactivated.insert(id);
-            } else {
-                panic!("Unexpected deactivation status: {}", line);
+            if !seen.contains(&id) {
+                seen.insert(id);
+                if parts[1] == "63" {
+                    suspended.insert(id);
+                } else if parts[1] == "50" {
+                    deactivated.insert(id);
+                } else {
+                    panic!("Unexpected deactivation status: {}", line);
+                }
             }
         }
     }
@@ -147,40 +150,44 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     for line in reader.lines() {
         let line = line?;
         let json = serde_json::from_str(&line)?;
-        let mut current = Record::from_json(&json).unwrap();
+        if let Some(mut current) = Record::from_json(&json) {
+            match records.get_mut(&current.id) {
+                Some(previous) => {
+                    let previous_first_seen_blue = previous.first_seen_blue;
+                    let current_first_seen_blue = current.first_seen_blue;
 
-        match records.get_mut(&current.id) {
-            Some(previous) => {
-                let previous_first_seen_blue = previous.first_seen_blue;
-                let current_first_seen_blue = current.first_seen_blue;
+                    let new_first_seen_blue =
+                        match (previous_first_seen_blue, current_first_seen_blue) {
+                            (Some(previous), Some(current)) => Some(previous.min(current)),
+                            (Some(previous), None) => Some(previous),
+                            (None, Some(current)) => Some(current),
+                            (None, None) => None,
+                        };
 
-                let new_first_seen_blue = match (previous_first_seen_blue, current_first_seen_blue)
-                {
-                    (Some(previous), Some(current)) => Some(previous.min(current)),
-                    (Some(previous), None) => Some(previous),
-                    (None, Some(current)) => Some(current),
-                    (None, None) => None,
-                };
+                    if (previous.status == Status::Suspended
+                        || previous.status == Status::Deactivated)
+                        && current.snapshot > previous.snapshot
+                    {
+                        current.status = previous.status;
+                        *previous = current;
+                    }
 
-                if (previous.status == Status::Suspended || previous.status == Status::Deactivated)
-                    && current.snapshot > previous.snapshot
-                {
-                    current.status = previous.status;
-                    *previous = current;
+                    previous.first_seen_blue = new_first_seen_blue;
                 }
-
-                previous.first_seen_blue = new_first_seen_blue;
-            }
-            None => {
-                if suspended.contains(&current.id) {
-                    current.status = Status::Suspended;
-                } else if deactivated.contains(&current.id) {
-                    current.status = Status::Deactivated;
-                } else {
-                    log::error!("Unknown profile ID: {}", line);
+                None => {
+                    if suspended.contains(&current.id) {
+                        current.status = Status::Suspended;
+                        records.insert(current.id, current);
+                    } else if deactivated.contains(&current.id) {
+                        current.status = Status::Deactivated;
+                        records.insert(current.id, current);
+                    } else {
+                        log::error!("Unknown profile ID: {}", line);
+                    }
                 }
-                records.insert(current.id, current);
             }
+        } else {
+            log::error!("Invalid record: {}", json);
         }
     }
 
