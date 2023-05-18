@@ -37,7 +37,7 @@ impl Verified {
             Some("Business") => Some(Some(Self::Business)),
             Some("Government") => Some(Some(Self::Government)),
             Some(_) => None,
-            None => None,
+            None => Some(None),
         }
     }
 }
@@ -109,6 +109,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut suspended = HashSet::new();
     let mut deactivated = HashSet::new();
     let mut records = HashMap::new();
+
+    let mut prev_first_seen = HashMap::new();
+    let mut unknown_previous = HashSet::new();
+
+    let reader = BufReader::new(File::open(opts.previous)?);
+
+    for line in reader.lines() {
+        let line = line?;
+        let parts = line.split(',').collect::<Vec<_>>();
+        let id = parts[0].parse::<u64>().unwrap();
+
+        prev_first_seen.insert(id, (parts[4].to_string(), parts[5].to_string()));
+    }
 
     let reader = BufReader::new(File::open(opts.current)?);
 
@@ -195,22 +208,43 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     records.sort_by_key(|(id, _)| *id);
 
     for (_, record) in records {
-        println!(
-            "{},{},{},{},{},{},{}",
-            record.id,
-            record.screen_name,
-            record
-                .verified
-                .map(|verified| verified.to_string())
-                .unwrap_or_default(),
-            record.followers_count,
-            Utc.timestamp_opt(record.first_seen_blue.unwrap(), 0)
-                .unwrap()
-                .date_naive(),
-            record.first_seen_blue.unwrap(),
-            record.status
-        );
+        if let Some(first_seen_blue) = record.first_seen_blue {
+            println!(
+                "{},{},{},{},{},{},{}",
+                record.id,
+                record.screen_name,
+                record
+                    .verified
+                    .map(|verified| verified.to_string())
+                    .unwrap_or_default(),
+                record.followers_count,
+                Utc.timestamp_opt(first_seen_blue, 0).unwrap().date_naive(),
+                record.first_seen_blue.unwrap(),
+                record.status
+            );
+        } else {
+            if let Some((pfsd, pfst)) = prev_first_seen.get(&record.id) {
+                println!(
+                    "{},{},{},{},{},{},{}",
+                    record.id,
+                    record.screen_name,
+                    record
+                        .verified
+                        .map(|verified| verified.to_string())
+                        .unwrap_or_default(),
+                    record.followers_count,
+                    pfsd,
+                    pfst,
+                    record.status
+                );
+            } else {
+                log::error!("Unknown previous: {} {}", record.id, record.screen_name);
+                unknown_previous.insert(record.id);
+            }
+        }
     }
+
+    log::info!("Unknown previous count: {}", unknown_previous.len());
 
     Ok(())
 }
@@ -226,4 +260,7 @@ struct Opts {
     /// Current file path
     #[clap(long)]
     current: String,
+    /// Previous data file path
+    #[clap(long)]
+    previous: String,
 }
