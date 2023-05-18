@@ -331,6 +331,37 @@ impl Store {
             )
     }
 
+    pub fn known_user_ids(&self) -> Result<HashSet<u64>, Error> {
+        let mut iterator = self.past_batches();
+        let mut result = HashSet::new();
+
+        for batch in iterator {
+            let (_, batch) = batch?;
+
+            result.insert(batch.user_id);
+
+            if let Some(change) = batch.follower_change {
+                for id in change.addition_ids {
+                    result.insert(id);
+                }
+                for id in change.removal_ids {
+                    result.insert(id);
+                }
+            }
+
+            if let Some(change) = batch.followed_change {
+                for id in change.addition_ids {
+                    result.insert(id);
+                }
+                for id in change.removal_ids {
+                    result.insert(id);
+                }
+            }
+        }
+
+        Ok(result)
+    }
+
     fn new_addition_add_batch(
         by_date: &mut HashMap<NaiveDate, HashMap<u64, (usize, usize)>>,
         day_window: usize,

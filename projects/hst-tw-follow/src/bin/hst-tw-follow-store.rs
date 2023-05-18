@@ -178,6 +178,57 @@ fn main() -> Result<(), Error> {
             let mut writer = BufWriter::new(File::create(output)?);
             write_batches(&mut writer, batches)?;
         }
+        Command::KnownUsers => {
+            let mut known_user_ids = store.known_user_ids()?.into_iter().collect::<Vec<_>>();
+            known_user_ids.sort();
+
+            for id in known_user_ids {
+                println!("{}", id);
+            }
+        }
+        Command::Lookup { id } => {
+            for result in store.past_batches() {
+                let (date, batch) = result?;
+
+                if let Some(change) = &batch.follower_change {
+                    if change.addition_ids.contains(&id) {
+                        println!(
+                            ">,+,{},{},{}",
+                            batch.user_id,
+                            batch.timestamp.timestamp(),
+                            date
+                        );
+                    }
+                    if change.removal_ids.contains(&id) {
+                        println!(
+                            ">,-,{},{},{}",
+                            batch.user_id,
+                            batch.timestamp.timestamp(),
+                            date
+                        );
+                    }
+                }
+
+                if let Some(change) = &batch.followed_change {
+                    if change.addition_ids.contains(&id) {
+                        println!(
+                            "<,+,{},{},{}",
+                            batch.user_id,
+                            batch.timestamp.timestamp(),
+                            date
+                        );
+                    }
+                    if change.removal_ids.contains(&id) {
+                        println!(
+                            "<,-,{},{},{}",
+                            batch.user_id,
+                            batch.timestamp.timestamp(),
+                            date
+                        );
+                    }
+                }
+            }
+        }
     }
 
     Ok(())
@@ -245,6 +296,10 @@ enum Command {
         /// Output file path
         #[clap(long, default_value = "current.bin")]
         output: String,
+    },
+    KnownUsers,
+    Lookup {
+        id: u64,
     },
 }
 
