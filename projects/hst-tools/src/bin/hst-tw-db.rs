@@ -78,6 +78,19 @@ fn main() -> Result<(), Error> {
                 }
             }
         }
+        Command::LookupFullJson => {
+            let lines = std::io::stdin().lock().lines();
+            let db = ProfileDb::<ReadOnly>::open(opts.db, true)?;
+
+            for line in lines {
+                let line = line?;
+                let id = line.parse::<u64>().unwrap();
+                let users = db.lookup(id)?;
+                for user in users {
+                    println!("{}", serde_json::json!(user.1));
+                }
+            }
+        }
         Command::Export => {
             let db = ProfileDb::<ReadOnly>::open(opts.db, true)?;
 
@@ -511,6 +524,7 @@ enum Command {
         id: u64,
     },
     LookupAll,
+    LookupFullJson,
     LookupAllJson {
         /// Get earliest snapshot (default is latest)
         #[clap(long)]
