@@ -21,7 +21,7 @@ hst-cli = { path = "../hst-cli" }
 hst-deactivations = { path = "../hst-deactivations" }
 hst-tw-db = { path = "../hst-tw-db" }
 integer-encoding = "3"
-rocksdb = { version = "0.20", default-features = false, features = ["zstd"] }
+rocksdb = { version = "0.21", default-features = false, features = ["zstd"] }
 rusqlite = { version = "0.29", features = ["bundled"] }
 serde_json = { version = "1", features = ["preserve_order"] }
 thiserror = "1"
