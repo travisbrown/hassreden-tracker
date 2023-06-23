@@ -27,7 +27,7 @@ hst-tw-profiles-dir = { path = "../hst-tw-profiles-dir" }
 hst-tw-utils = { path = "../hst-tw-utils" }
 hst-utils = { path = "../hst-utils" }
 indicatif = "0.17"
-itertools = "0.10"
+itertools = "0.11"
 regex = "1"
 reqwest = { version = "0.11", features = ["gzip", "json"] }
 serde_json = { version = "1", features = ["preserve_order"] }
