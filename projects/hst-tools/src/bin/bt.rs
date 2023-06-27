@@ -149,7 +149,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let opts: Opts = Opts::parse();
     opts.verbose.init_logging()?;
 
-    let mut deactivations = DeactivationLog::read(File::open("deactivations.csv")?)?;
+    let deactivations = DeactivationLog::read(File::open("deactivations.csv")?)?;
     let mut deactivations_by_date = deactivations
         .deactivations(None)
         .into_iter()
@@ -192,7 +192,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             for (i, line) in reader.lines().enumerate() {
                 let line = line?;
                 let json = serde_json::from_str(&line)?;
-                if let Some(mut record) = Record::from_json(&json) {
+                if let Some(record) = Record::from_json(&json) {
                     if record.snapshot < last_snapshot {
                         log::error!("Invalid snapshot ordering at line {}", i);
                     }

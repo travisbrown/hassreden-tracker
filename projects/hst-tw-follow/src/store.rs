@@ -332,7 +332,7 @@ impl Store {
     }
 
     pub fn known_user_ids(&self) -> Result<HashSet<u64>, Error> {
-        let mut iterator = self.past_batches();
+        let iterator = self.past_batches();
         let mut result = HashSet::new();
 
         for batch in iterator {

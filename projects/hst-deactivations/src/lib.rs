@@ -187,7 +187,7 @@ impl DeactivationLog {
     }
 
     pub fn fix(&mut self) {
-        for (user_id, entries) in self.entries.iter_mut() {
+        for (_user_id, entries) in self.entries.iter_mut() {
             if !Self::validate_entries(entries)
                 && entries[0].reversal.is_none()
                 && entries[1..].iter().all(|entry| entry.reversal.is_some())

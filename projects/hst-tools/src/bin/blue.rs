@@ -222,25 +222,23 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 record.first_seen_blue.unwrap(),
                 record.status
             );
+        } else if let Some((pfsd, pfst)) = prev_first_seen.get(&record.id) {
+            println!(
+                "{},{},{},{},{},{},{}",
+                record.id,
+                record.screen_name,
+                record
+                    .verified
+                    .map(|verified| verified.to_string())
+                    .unwrap_or_default(),
+                record.followers_count,
+                pfsd,
+                pfst,
+                record.status
+            );
         } else {
-            if let Some((pfsd, pfst)) = prev_first_seen.get(&record.id) {
-                println!(
-                    "{},{},{},{},{},{},{}",
-                    record.id,
-                    record.screen_name,
-                    record
-                        .verified
-                        .map(|verified| verified.to_string())
-                        .unwrap_or_default(),
-                    record.followers_count,
-                    pfsd,
-                    pfst,
-                    record.status
-                );
-            } else {
-                log::error!("Unknown previous: {} {}", record.id, record.screen_name);
-                unknown_previous.insert(record.id);
-            }
+            log::error!("Unknown previous: {} {}", record.id, record.screen_name);
+            unknown_previous.insert(record.id);
         }
     }
 
