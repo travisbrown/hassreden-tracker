@@ -73,6 +73,7 @@ pub enum RunInfo {
 
 pub struct Session {
     twitter_client: Arc<Client>,
+    downloader_client: Arc<Client>,
     store: Store,
     tracked: TrackedUserDb,
     deactivations: DeactivationFile,
@@ -82,6 +83,7 @@ pub struct Session {
 impl Session {
     pub fn open<P: AsRef<Path>>(
         twitter_client: Client,
+        downloader_client: Client,
         store_path: P,
         tracked_path: P,
         deactivations_path: P,
@@ -94,6 +96,7 @@ impl Session {
 
         Ok(Self {
             twitter_client: Arc::new(twitter_client),
+            downloader_client: Arc::new(downloader_client),
             store,
             tracked,
             deactivations,
@@ -101,14 +104,10 @@ impl Session {
         })
     }
 
-    pub fn downloader<P: AsRef<Path>>(
-        &self,
-        path: P,
-        client: Arc<Client>,
-    ) -> super::downloader::Downloader {
+    pub fn downloader<P: AsRef<Path>>(&self, path: P) -> super::downloader::Downloader {
         super::downloader::Downloader::new(
             path.as_ref().to_path_buf().into_boxed_path(),
-            client,
+            self.downloader_client.clone(),
             self.deactivations.clone(),
             self.profile_age_db.clone(),
             default_profile_target_age(),
@@ -149,7 +148,7 @@ impl Session {
                     if !user
                         .as_ref()
                         .map(|user| {
-                            user.protected || check_block(&self.twitter_client, user, token_type)
+                            user.protected || check_block(&self.downloader_client, user, token_type)
                         })
                         .unwrap_or(false)
                     {
@@ -237,7 +236,14 @@ impl Session {
             user_id,
             estimate_run_duration(user.map(|user| user.followers_count).unwrap_or(15_000)),
         )? {
-            match scrape_follows(&self.twitter_client, token_type, user_id).await? {
+            match scrape_follows(
+                &self.twitter_client,
+                &self.downloader_client,
+                token_type,
+                user_id,
+            )
+            .await?
+            {
                 Ok((follower_ids, followed_ids)) => {
                     let batch = self.store.make_batch(user_id, follower_ids, followed_ids);
                     self.store.update_and_write(&batch, last_update)?;
@@ -249,7 +255,7 @@ impl Session {
                     match status {
                         UnavailableStatus::Block => {
                             self.tracked
-                                .put_block(user_id, self.twitter_client.user_id())?;
+                                .put_block(user_id, self.downloader_client.user_id())?;
                         }
                         UnavailableStatus::Deactivated => {
                             self.deactivations
@@ -350,6 +356,7 @@ impl Session {
 
 async fn scrape_follows(
     client: &Client,
+    downloader_client: &Client,
     token_type: TokenType,
     id: u64,
 ) -> Result<Result<(HashSet<u64>, HashSet<u64>), UnavailableStatus>, Error> {
@@ -365,7 +372,7 @@ async fn scrape_follows(
         followed_ids_lookup.map_err(Error::from)
     ) {
         Ok(pair) => Ok(Ok(pair)),
-        Err(error) => check_unavailable_reason(client, id, &error)
+        Err(error) => check_unavailable_reason(client, downloader_client, id, &error)
             .await
             .map_or_else(|| Err(error), |status| Ok(Err(status))),
     }
@@ -374,6 +381,7 @@ async fn scrape_follows(
 /// Check whether a user token unauthorized error indicates a block, etc.
 pub async fn check_unavailable_reason(
     client: &Client,
+    downloader_client: &Client,
     id: u64,
     error: &Error,
 ) -> Option<UnavailableStatus> {
@@ -383,7 +391,7 @@ pub async fn check_unavailable_reason(
             if reason == UnavailableReason::Unauthorized
                 || reason == UnavailableReason::DoesNotExist
             {
-                client
+                downloader_client
                     .lookup_user_or_status(id, TokenType::App)
                     .await
                     .ok()

@@ -7,7 +7,6 @@ use hst_tw_follow::{
     downloader::Downloader,
     session::{RunInfo, Session},
 };
-use std::sync::Arc;
 
 const ERROR_WAIT_S: u64 = 10 * 60;
 const MIN_AGE_S: i64 = 6 * 60 * 60;
@@ -17,25 +16,24 @@ async fn main() -> Result<(), Error> {
     let opts: Opts = Opts::parse();
     opts.verbose.init_logging()?;
 
+    let downloader_client = Client::from_config_file(opts.keys)
+        .await
+        .map_err(hst_tw_follow::session::Error::from)?;
+
     let session = Session::open(
         Client::from_bearer_token(&opts.token)
             .await
             .map_err(hst_tw_follow::session::Error::from)?,
+        downloader_client,
         opts.store,
         opts.tracked,
         opts.deactivations,
         opts.ages,
     )?;
 
-    let downloader_client = Arc::new(
-        Client::from_config_file(opts.keys)
-            .await
-            .map_err(hst_tw_follow::session::Error::from)?,
-    );
-
     match opts.command {
         Command::Run { download, batch } => {
-            let downloader = session.downloader(&download, downloader_client);
+            let downloader = session.downloader(&download);
 
             try_join!(
                 run_loop(&session, TokenType::App),
