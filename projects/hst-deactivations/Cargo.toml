@@ -12,5 +12,5 @@ edition = "2021"
 
 [dependencies]
 chrono = "0.4"
-fd-lock = "3"
+fd-lock = "4"
 thiserror = "1"
