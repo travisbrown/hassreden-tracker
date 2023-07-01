@@ -7,6 +7,7 @@ use hst_tw_follow::{
     downloader::Downloader,
     session::{RunInfo, Session},
 };
+use std::sync::Arc;
 
 const ERROR_WAIT_S: u64 = 10 * 60;
 const MIN_AGE_S: i64 = 6 * 60 * 60;
@@ -17,7 +18,7 @@ async fn main() -> Result<(), Error> {
     opts.verbose.init_logging()?;
 
     let session = Session::open(
-        Client::from_config_file(opts.keys)
+        Client::from_bearer_token(&opts.token)
             .await
             .map_err(hst_tw_follow::session::Error::from)?,
         opts.store,
@@ -26,9 +27,15 @@ async fn main() -> Result<(), Error> {
         opts.ages,
     )?;
 
+    let downloader_client = Arc::new(
+        Client::from_config_file(opts.keys)
+            .await
+            .map_err(hst_tw_follow::session::Error::from)?,
+    );
+
     match opts.command {
         Command::Run { download, batch } => {
-            let downloader = session.downloader(&download);
+            let downloader = session.downloader(&download, downloader_client);
 
             try_join!(
                 run_loop(&session, TokenType::App),
@@ -129,6 +136,12 @@ struct Opts {
     /// Profile age database path
     #[clap(long, default_value = "data/profile-ages-db/")]
     ages: String,
+    /// Bearer token
+    #[clap(
+        long,
+        default_value = "AAAAAAAAAAAAAAAAAAAAANRILgAAAAAAnNwIzUejRCOuH5E6I8xnZz4puTs%3D1Zv7ttfk8LF81IUq16cHjhLTvJu4FA33AGWWjCpTnA"
+    )]
+    token: String,
     #[clap(subcommand)]
     command: Command,
 }

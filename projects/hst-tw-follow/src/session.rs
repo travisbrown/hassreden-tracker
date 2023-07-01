@@ -21,8 +21,8 @@ const RUN_DURATION_BUFFER_S: i64 = 20 * 60;
 
 const MIN_FOLLOWERS_COUNT: usize = 15_000;
 const MAX_FOLLOWERS_COUNT: usize = 1_000_000;
-const MIN_TARGET_AGE_H: i64 = 72;
-const MAX_TARGET_AGE_D: i64 = 21;
+const MIN_TARGET_AGE_H: i64 = 24;
+const MAX_TARGET_AGE_D: i64 = 1;
 
 /// This is supposed to be 15 minutes but in practice seems longer.
 const RATE_LIMIT_WINDOW_S: i64 = 24 * 60;
@@ -101,10 +101,14 @@ impl Session {
         })
     }
 
-    pub fn downloader<P: AsRef<Path>>(&self, path: P) -> super::downloader::Downloader {
+    pub fn downloader<P: AsRef<Path>>(
+        &self,
+        path: P,
+        client: Arc<Client>,
+    ) -> super::downloader::Downloader {
         super::downloader::Downloader::new(
             path.as_ref().to_path_buf().into_boxed_path(),
-            self.twitter_client.clone(),
+            client,
             self.deactivations.clone(),
             self.profile_age_db.clone(),
             default_profile_target_age(),
