@@ -1,0 +1,31 @@
+[package]
+name = "hst-tw-graph"
+authors = ["Travis Brown <travisrobertbrown@gmail.com>"]
+homepage = "https://github.com/travisbrown/hassreden-tracker"
+repository = "https://github.com/travisbrown/hassreden-tracker"
+description = "Twitter network graph analysis"
+keywords = ["twitter"]
+license-file = "../../LICENSE"
+readme = "../../README.md"
+version = "0.2.0"
+edition = "2021"
+
+[dependencies]
+#chrono = "0.4"
+#csv = "1"
+#egg-mode = "0.16"
+#egg-mode-extras = "0.3.4"
+#flate2 = "1"
+#futures = "0.3"
+graph = "0.3"
+hst-cli = { path = "../hst-cli" }
+hst-deactivations = { path = "../hst-deactivations" }
+hst-tw-db = { path = "../hst-tw-db" }
+hst-tw-follow = { path = "../hst-tw-follow" }
+#integer-encoding = "3"
+#rocksdb = { version = "0.21", default-features = false, features = ["zstd"] }
+#rusqlite = { version = "0.29", features = ["bundled"] }
+#serde_json = { version = "1", features = ["preserve_order"] }
+thiserror = "1"
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+#zstd = "0.12"

@@ -6,6 +6,7 @@ members = [
     "hst-tools",
     "hst-tw-db",
     "hst-tw-follow",
+    "hst-tw-graph",
     "hst-tw-images",
     "hst-tw-profiles",
     "hst-tw-profiles-dir",
