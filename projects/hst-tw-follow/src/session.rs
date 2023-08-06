@@ -54,6 +54,7 @@ pub enum UnavailableStatus {
     Deactivated,
     Suspended,
     Protected,
+    Unknown,
 }
 
 #[derive(Debug)]
@@ -77,6 +78,7 @@ pub struct Session {
     store: Store,
     tracked: TrackedUserDb,
     deactivations: DeactivationFile,
+    failed: HashSet<u64>,
     pub profile_age_db: ProfileAgeDb,
 }
 
@@ -100,6 +102,7 @@ impl Session {
             store,
             tracked,
             deactivations,
+            failed: HashSet::new(),
             profile_age_db,
         })
     }
@@ -114,7 +117,7 @@ impl Session {
         )
     }
 
-    pub async fn run(&self, token_type: TokenType) -> Result<Option<RunInfo>, Error> {
+    pub async fn run(&mut self, token_type: TokenType) -> Result<Option<RunInfo>, Error> {
         if let Some(archived_batch_count) = self.store.archive()? {
             Ok(Some(RunInfo::Archived {
                 archived_batch_count,
@@ -161,7 +164,9 @@ impl Session {
                             })
                             .unwrap_or_else(|| default_target_age(15_000));
 
-                        candidates.push((id, user, age - target_age));
+                        if !self.failed.contains(&id) {
+                            candidates.push((id, user, age - target_age));
+                        }
                     }
                 }
             }
@@ -170,7 +175,11 @@ impl Session {
                 .into_iter()
                 .max_by_key(|(id, _, diff)| (*diff, Reverse(*id)))
             {
-                Some((id, user, _)) => self.scrape(token_type, id, user).await,
+                Some((id, user, _)) => {
+                    let res = self.scrape(token_type, id, user).await;
+                    tokio::time::sleep(tokio::time::Duration::from_millis(1000)).await;
+                    res
+                }
                 None => Ok(None),
             }
         }
@@ -215,7 +224,7 @@ impl Session {
     }
 
     pub async fn scrape(
-        &self,
+        &mut self,
         token_type: TokenType,
         user_id: u64,
         user: Option<TrackedUser>,
@@ -270,7 +279,9 @@ impl Session {
                         UnavailableStatus::Protected => {
                             self.tracked.set_protected(user_id, true)?;
                         }
+                        UnavailableStatus::Unknown => {}
                     }
+                    self.failed.insert(user_id);
 
                     self.store.undo_check_out(user_id, last_update)?;
 
@@ -385,7 +396,8 @@ pub async fn check_unavailable_reason(
     id: u64,
     error: &Error,
 ) -> Option<UnavailableStatus> {
-    match error {
+    Some(UnavailableStatus::Unknown)
+    /*match error {
         Error::EggMode(error) => {
             let reason = UnavailableReason::from(error);
             if reason == UnavailableReason::Unauthorized
@@ -406,7 +418,7 @@ pub async fn check_unavailable_reason(
             }
         }
         _ => None,
-    }
+    }*/
 }
 
 fn check_block(client: &Client, user: &TrackedUser, token_type: TokenType) -> bool {

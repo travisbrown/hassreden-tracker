@@ -16,11 +16,10 @@ async fn main() -> Result<(), Error> {
     let opts: Opts = Opts::parse();
     opts.verbose.init_logging()?;
 
-    let downloader_client = Client::from_config_file(opts.keys)
+    let downloader_client = Client::from_bearer_token(&opts.token)
         .await
         .map_err(hst_tw_follow::session::Error::from)?;
-
-    let session = Session::open(
+    let mut session = Session::open(
         Client::from_bearer_token(&opts.token)
             .await
             .map_err(hst_tw_follow::session::Error::from)?,
@@ -31,15 +30,18 @@ async fn main() -> Result<(), Error> {
         opts.ages,
     )?;
 
+    /*Client::from_config_file(opts.keys)
+    .await
+    .map_err(hst_tw_follow::session::Error::from)?;*/
+
     match opts.command {
         Command::Run { download, batch } => {
             let downloader = session.downloader(&download);
 
             try_join!(
-                run_loop(&session, TokenType::App),
-                run_loop(&session, TokenType::User),
-                download_loop(&downloader, batch, TokenType::App),
-                download_loop(&downloader, batch, TokenType::User)
+                run_loop(&mut session, TokenType::App) //run_loop(&session, TokenType::User),
+                                                       //download_loop(&downloader, batch, TokenType::App),
+                                                       //download_loop(&downloader, batch, TokenType::User)
             )?;
         }
         Command::Scrape { user_token, id } => {
@@ -93,6 +95,16 @@ async fn main() -> Result<(), Error> {
                     last.map(|value| value.to_string()).unwrap_or_default(),
                     started.map(|value| value.to_string()).unwrap_or_default(),
                 );
+            }
+        }
+        Command::DumpPrioritized => {
+            let ids = session
+                .profile_age_db
+                .prioritized()
+                .map_err(hst_tw_follow::session::Error::from)?;
+
+            for id in ids {
+                println!("{}", id);
             }
         }
     }
@@ -172,9 +184,10 @@ enum Command {
         #[clap(long, default_value = "100")]
         count: usize,
     },
+    DumpPrioritized,
 }
 
-async fn run_loop(session: &Session, token_type: TokenType) -> Result<(), Error> {
+async fn run_loop(session: &mut Session, token_type: TokenType) -> Result<(), Error> {
     let tag = if token_type == TokenType::App {
         "[APPL]"
     } else {

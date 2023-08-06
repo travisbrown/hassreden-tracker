@@ -204,6 +204,35 @@ impl ProfileAgeDb {
         Ok((prioritized_count, first_next))
     }
 
+    pub fn prioritized(&self) -> Result<Vec<u64>, Error> {
+        let iter = self.db.prefix_iterator([AGE_TAG]);
+        let mut prioritized = vec![];
+        let mut past_prioritized = false;
+        let now = Utc::now().trunc_subsecs(0);
+
+        for result in iter {
+            let (key, value) = result?;
+
+            if key[0] == AGE_TAG {
+                let (next, id) = parse_age_key(&key)?;
+                let (last, started) = parse_age_value(&value)?;
+
+                match next {
+                    Some(next) => {
+                        past_prioritized = true;
+                    }
+                    None => {
+                        if !past_prioritized {
+                            prioritized.push(id);
+                        }
+                    }
+                }
+            }
+        }
+
+        Ok(prioritized)
+    }
+
     pub fn get_next(
         &self,
         count: usize,
